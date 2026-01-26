@@ -1,0 +1,20 @@
+/**:
+  ros__parameters:
+    # plugin_denylist:
+    #   - image_pub
+    #   - vibration
+    #   - distance_sensor
+    #   - rangefinder
+    #   - wheel_odometry
+    #   - cellular_status
+    #   - companion_process_status
+    #   - debug_value
+
+    plugin_allowlist:
+       - sys_status
+       - sys_time
+       - command
+       - local_position
+       - setpoint_position
+       - param
+       - imu
