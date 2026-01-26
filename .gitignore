@@ -14,3 +14,4 @@ __pycache__/
 
 # MacOS files
 .DS_Store
+mission_data.csv
