@@ -6,6 +6,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from mavros_msgs.msg import State # สถานะของโดรน
 from mavros_msgs.srv import CommandBool, SetMode # บริการสั่ง arm และ Set Mode
 from geometry_msgs.msg import PoseStamped # ข้อมูลตำแหน่ง
+from std_srvs.srv import Trigger # Service สำหรับ Trigger
 
 import numpy as np
 
@@ -22,6 +23,10 @@ class OffboardControl(Node):
         
         # สร้าง Subscriber
         self.state_sub = self.create_subscription(State, '/mavros/state', self.state_callback, 10)
+
+        # สร้าง Service Server สำหรับสั่งเริ่มภารกิจ
+        self.srv_start_mission = self.create_service(Trigger, '/mission/start', self.start_mission_callback)
+        self.mission_started = False
         
         # --- 1. สร้างโปรไฟล์ QoS ที่เข้ากันได้กับ Best Effort ---
         # เราใช้ Durability=Volatile เพราะข้อมูลตำแหน่งเป็นข้อมูล realtime ไม่ต้องเก็บของเก่า
@@ -114,6 +119,16 @@ class OffboardControl(Node):
         except Exception as e:
             self.get_logger().error(f"Service call failed: {e}")
 
+    def start_mission_callback(self, request, response):
+        """
+        Callback เมื่อเรียก Service /mission/start
+        """
+        self.mission_started = True
+        self.get_logger().info("Mission Manual Start Triggered!")
+        response.success = True
+        response.message = "Mission Started"
+        return response
+
     # ---------------------------------------
     # ฟังก์ชันหลักในการรันภารกิจ
     # ---------------------------------------
@@ -123,6 +138,16 @@ class OffboardControl(Node):
             rclpy.spin_once(self)
             self.get_logger().info("Waiting for connection to MAVROS...")
         self.get_logger().info("MAVROS connected!")
+
+        # รอคำสั่ง Start Mission
+        self.get_logger().info("Waiting for 'Start Mission' command via /mission/start service...")
+        while not self.mission_started and rclpy.ok():
+            rclpy.spin_once(self, timeout_sec=0.1)
+        
+        if not rclpy.ok():
+            return
+            
+        self.get_logger().info("Start command received! Proceeding to takeoff...")
 
         # ส่ง setpoints ก่อนเปลี่ยนโหมด (อย่างน้อย 100 ครั้ง)(ให้ผ่านเช็ค QoS)
         # ตั้งค่า target_pose เริ่มต้นที่ (0,0,0)
