@@ -87,13 +87,21 @@ globalPosSub.subscribe((msg) => {
         const lat = msg.latitude.toFixed(6);
         const lon = msg.longitude.toFixed(6);
         document.getElementById('val-coords').innerText = `${lat}, ${lon}`;
-        document.getElementById('val-height').innerText = msg.altitude.toFixed(1);
         droneMarker.setLatLng([msg.latitude, msg.longitude]);
         map.panTo([msg.latitude, msg.longitude]); // Follow drone
 
         // Simple GPS status check (if we have fix)
         updateHealthStatus('health-gps', msg.status.status >= 0);
     }
+});
+
+const relAltSub = new ROSLIB.Topic({
+    ros: ros, name: '/mavros/global_position/rel_alt', messageType: 'std_msgs/msg/Float64'
+});
+
+relAltSub.subscribe((msg) => {
+    // Height from ground
+    document.getElementById('val-height').innerText = msg.data.toFixed(1);
 });
 
 const vfrSub = new ROSLIB.Topic({
