@@ -26,7 +26,7 @@ const droneMarker = L.marker([14.039498, 100.606766], { icon: droneIcon }).addTo
 
 // 3. ROS 2 Connection Logic
 const ros = new ROSLIB.Ros({
-    url: 'ws://localhost:9090'
+    url: 'ws://localhost:9090' // IP ของคอมพิวเตอร์ A (เครื่องที่รัน Rosbridge)
 });
 
 const connIndicator = document.getElementById('ros-conn-indicator');
@@ -41,7 +41,7 @@ ros.on('connection', () => {
     // Simulate Wifi/CPU health
     setTimeout(() => {
         updateHealthStatus('health-wifi', true);
-        updateHealthStatus('health-cpu', true);
+        updateHealthStatus('health-gcs', true);
     }, 1000);
 });
 
@@ -88,7 +88,7 @@ globalPosSub.subscribe((msg) => {
         const lon = msg.longitude.toFixed(6);
         document.getElementById('val-coords').innerText = `${lat}, ${lon}`;
         droneMarker.setLatLng([msg.latitude, msg.longitude]);
-        map.panTo([msg.latitude, msg.longitude]); // Follow drone
+        //map.panTo([msg.latitude, msg.longitude]); // Follow drone
 
         // Simple GPS status check (if we have fix)
         updateHealthStatus('health-gps', msg.status.status >= 0);

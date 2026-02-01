@@ -31,8 +31,13 @@
                         <span class="font-bold text-slate-700">DRONE</span>
                         <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                     </div>
-                    <button
-                        class="text-[10px] font-bold border border-blue-500 text-blue-500 px-2 py-1 rounded hover:bg-blue-50 transition">SEARCH</button>
+                    <div id="ros-conn-indicator" class="flex items-center gap-1">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase">Connecting...</span>
+                        <div class="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></div>
+                    </div>
+                    <!-- <button
+                        class="text-[10px] font-bold border border-blue-500 text-blue-500 px-2 py-1 rounded hover:bg-blue-50 transition">SEARCH
+                    </button> -->
                 </div>
                 <p class="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Holybro X500 V2</p>
             </div>
@@ -84,7 +89,7 @@
                     <div class="grid grid-cols-5 gap-2 text-center">
                         <div class="flex flex-col items-center gap-1">
                             <div class="p-2 bg-slate-50 rounded-full text-slate-400" id="health-gps"><i
-                                    data-lucide="map-pin" class="w-4 h-4"></i></div>
+                                    data-lucide="satellite" class="w-4 h-4"></i></div>
                             <span class="text-[8px] font-bold uppercase">GPS</span>
                         </div>
                         <div class="flex flex-col items-center gap-1">
@@ -98,13 +103,13 @@
                             <span class="text-[8px] font-bold uppercase">Arm</span>
                         </div>
                         <div class="flex flex-col items-center gap-1">
-                            <div class="p-2 bg-slate-50 rounded-full text-slate-400" id="health-cpu"><i
-                                    data-lucide="cpu" class="w-4 h-4"></i></div>
-                            <span class="text-[8px] font-bold uppercase">CPU</span>
+                            <div class="p-2 bg-slate-50 rounded-full text-slate-400" id="health-gcs"><i
+                                    data-lucide="monitor" class="w-4 h-4"></i></div>
+                            <span class="text-[8px] font-bold uppercase">GCS</span>
                         </div>
                         <div class="flex flex-col items-center gap-1">
                             <div class="p-2 bg-slate-50 rounded-full text-slate-400" id="health-fcu"><i
-                                    data-lucide="box" class="w-4 h-4"></i></div>
+                                    data-lucide="drone" class="w-4 h-4"></i></div>
                             <span class="text-[8px] font-bold uppercase">FCU</span>
                         </div>
                     </div>
@@ -120,7 +125,7 @@
                             <span class="text-blue-500 font-bold" id="mission-status">IDLE</span>
                         </div>
                         <div class="flex justify-between text-[10px]">
-                            <span class="text-slate-400 font-bold uppercase tracking-wider">Distance</span>
+                            <span class="text-slate-400 font-bold uppercase tracking-wider">Distance from base</span>
                             <span class="text-slate-700 font-bold" id="val-dist">0.0 KM</span>
                         </div>
                     </div>
@@ -148,17 +153,45 @@
 
             <!-- Footer -->
             <div class="p-4 border-t border-slate-100 flex justify-between items-center">
-                <div class="flex gap-4">
-                    <button class="text-slate-400 hover:text-blue-500"><i data-lucide="home"
+                <div class="flex gap-6">
+                    <!-- <button class="text-slate-400 hover:text-blue-500"><i data-lucide="home"
                             class="w-4 h-4"></i></button>
                     <button class="text-slate-400 hover:text-blue-500"><i data-lucide="settings"
                             class="w-4 h-4"></i></button>
                     <button class="text-slate-400 hover:text-blue-500"><i data-lucide="map"
-                            class="w-4 h-4"></i></button>
+                            class="w-4 h-4"></i></button> -->
+
+                            <!-- ปุ่ม Return to Base (เน้นสีฟ้าอ่อน) -->
+                    <button onclick="returnToHome()" class="btn-circle tooltip-left bg-blue-50 text-blue-600 hover:bg-blue-100 group">
+                        <i data-lucide="home" class="w-4 h-4"></i>
+                        <div class="tooltip-text">
+                            Return to base
+                            <div class="tooltip-arrow"></div>
+                        </div>
+                    </button>
+
+                    <!-- ปุ่ม Center Drone on Map -->
+                    <button onclick="centerMapOnDrone()" class="btn-circle bg-slate-50 text-slate-400 hover:bg-slate-100 group">
+                        <i data-lucide="plane" class="w-4 h-4"></i>
+                        <div class="tooltip-text">
+                            Center Drone
+                            <div class="tooltip-arrow"></div>
+                        </div>
+                    </button>
+
+                    <!-- ปุ่ม View Target -->
+                    <button class="btn-circle bg-slate-50 text-slate-400 hover:bg-slate-100 group">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        <div class="tooltip-text">
+                            Target Location
+                            <div class="tooltip-arrow"></div>
+                        </div>
+                    </button>
                 </div>
-                <div id="ros-conn-indicator" class="flex items-center gap-1">
-                    <span class="text-[9px] font-bold text-slate-400 uppercase">Connecting...</span>
-                    <div class="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></div>
+                <div>
+                    <button class="text-slate-400 hover:text-blue-500">
+                        <i data-lucide="settings" class="w-4 h-4"></i>
+                    </button>
                 </div>
             </div>
         </aside>
@@ -168,7 +201,7 @@
             <div
                 class="absolute top-6 left-1/2 -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm px-6 py-2 rounded-full shadow-lg border border-white flex gap-10 items-center">
                 <button class="text-[11px] font-bold text-blue-500 flex flex-col items-center gap-1 group">
-                    <i data-lucide="plane" class="w-4 h-4"></i>
+                    <i data-lucide="drone" class="w-4 h-4"></i>
                     <span class="tracking-widest uppercase">Drones</span>
                 </button>
                 <button
