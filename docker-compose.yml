@@ -1,0 +1,11 @@
+services:
+    drone_app:
+        build: .
+        container_name: drone_jazzy
+        network_mode: host
+        privileged: true # เพื่อให้คุยกับ USB/Serial ได้
+        volumes:
+            - ./src:/ros2_ws/src
+            - ./www:/ros2_ws/www
+        tty: true
+        stdin_open: true

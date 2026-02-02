@@ -12,7 +12,12 @@ __pycache__/
 .vscode/
 .env
 
-# MacOS files
-.DS_Store
+# Docker
+.docker/
 
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Mission data
 mission_data.csv

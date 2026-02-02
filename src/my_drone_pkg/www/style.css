@@ -46,15 +46,83 @@ body {
 }
 
 @keyframes bounce-1 {
-    0% {
-        transform: translateY(0);
-    }
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+    100% { transform: translateY(0); }
+}
 
-    50% {
-        transform: translateY(-10px);
-    }
+/* Tooltip Styles */
+.btn-circle {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
 
-    100% {
-        transform: translateY(0);
-    }
+.btn-circle:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+}
+
+.tooltip-text {
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: #1e293b;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 50; 
+}
+
+/* สำหรับปุ่มที่อยู่ชิดขอบซ้าย ให้ Tooltip ไม่ออกไปนอกจอ */
+.btn-circle.tooltip-left .tooltip-text {
+    left: 0;
+    transform: translateX(0) translateY(10px);
+}
+
+.btn-circle.tooltip-left:hover .tooltip-text {
+    transform: translateX(0) translateY(0);
+}
+
+/* ปรับตำแหน่งลูกศรสำหรับ Tooltip ชิดซ้าย */
+.btn-circle.tooltip-left .tooltip-arrow {
+    left: 18px; /* กึ่งกลางของปุ่ม (36px / 2) */
+    transform: translateX(-50%);
+}
+
+.btn-circle:hover .tooltip-text {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Override สำหรับ hover ของ tooltip-left */
+.btn-circle.tooltip-left:hover .tooltip-text {
+    transform: translateX(0) translateY(0);
+}
+
+.tooltip-arrow {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #1e293b;
 }
