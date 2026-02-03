@@ -88,7 +88,7 @@ globalPosSub.subscribe((msg) => {
         const lon = msg.longitude.toFixed(6);
         document.getElementById('val-coords').innerText = `${lat}, ${lon}`;
         droneMarker.setLatLng([msg.latitude, msg.longitude]);
-        //map.panTo([msg.latitude, msg.longitude]); // Follow drone
+        map.panTo([msg.latitude, msg.longitude]); // Follow drone
 
         // Simple GPS status check (if we have fix)
         updateHealthStatus('health-gps', msg.status.status >= 0);

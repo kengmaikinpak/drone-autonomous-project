@@ -41,5 +41,14 @@ def generate_launch_description():
             executable='takeoff_node',
             name='offboard_control_node',
             output='screen'
+        ),
+
+        # Run Rosbridge
+        Node(
+            package='rosbridge_server',
+            executable='rosbridge_websocket',
+            name='rosbridge_websocket',
+            output='screen',
+            parameters=[{'port': 9090}]
         )
     ])
