@@ -5,7 +5,7 @@ from rclpy.clock import Clock
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from mavros_msgs.msg import State # สถานะของโดรน
 from mavros_msgs.srv import CommandBool, SetMode # บริการสั่ง arm และ Set Mode
-from geometry_msgs.msg import PoseStamped # ข้อมูลตำแหน่ง
+from geometry_msgs.msg import PoseStamped, PoseArray # ข้อมูลตำแหน่ง
 from std_srvs.srv import Trigger # Service สำหรับ Trigger
 
 import numpy as np
@@ -27,6 +27,11 @@ class OffboardControl(Node):
         # สร้าง Service Server สำหรับสั่งเริ่มภารกิจ
         self.srv_start_mission = self.create_service(Trigger, '/mission/start', self.start_mission_callback)
         self.mission_started = False
+        
+        # Subscriber สำหรับรับ waypoints จาก Web UI
+        self.waypoints_sub = self.create_subscription(
+            PoseArray, '/mission/waypoints', self.waypoints_callback, 10)
+        self.custom_waypoints = None  # เก็บ waypoints ที่รับจาก Web UI
         
         # --- 1. สร้างโปรไฟล์ QoS ที่เข้ากันได้กับ Best Effort ---
         # เราใช้ Durability=Volatile เพราะข้อมูลตำแหน่งเป็นข้อมูล realtime ไม่ต้องเก็บของเก่า
@@ -128,6 +133,21 @@ class OffboardControl(Node):
         response.success = True
         response.message = "Mission Started"
         return response
+    
+    def waypoints_callback(self, msg):
+        """
+        Callback เมื่อได้รับ waypoints จาก Web UI
+        """
+        self.custom_waypoints = []
+        for pose in msg.poses:
+            x = pose.position.x
+            y = pose.position.y
+            z = pose.position.z
+            # ไม่มี yaw ใน PoseArray ปกติ ใช้ 0.0 เป็นค่าเริ่มต้น
+            yaw = 0.0
+            self.custom_waypoints.append((x, y, z, yaw))
+        
+        self.get_logger().info(f"Received {len(self.custom_waypoints)} waypoints from Web UI: {self.custom_waypoints}")
 
     # ---------------------------------------
     # ฟังก์ชันหลักในการรันภารกิจ
@@ -202,17 +222,23 @@ class OffboardControl(Node):
         # ---------------------------------------
         
         # กำหนดลำดับ Waypoints
-        waypoints = [
-            (0.0, 0.0, 2.0, 0.0),    # 1. Takeoff (z=2, yaw=0)
-            (2.0, 0.0, 2.0, 0.0),    # 2. Forward (x=2, yaw=0)
-            (-2.0, 0.0, 2.0, 0.0),   # 3. Backward (x=-2, yaw=0)
-            (0.0, 0.0, 2.0, 0.0),    # 4. Center (x=0, yaw=0)
-            (0.0, -2.0, 2.0, 0.0),   # 5. Right (y=-2, yaw=0)
-            (0.0, 2.0, 2.0, 0.0),    # 6. Left (y=2, yaw=0)
-            (0.0, 0.0, 2.0, 0.0),    # 7. Center (x=0, yaw=0)
-            (0.0, 0.0, 2.0, 90.0),   # 8. Rotate (yaw=90)
-            (0.0, 0.0, 2.0, 0.0)     # 9. Rotate back (yaw=0)
-        ]
+        # ใช้ waypoints จาก Web UI ถ้ามี ไม่งั้นใช้ค่าเริ่มต้น
+        if self.custom_waypoints and len(self.custom_waypoints) > 0:
+            waypoints = self.custom_waypoints
+            self.get_logger().info(f"Using custom waypoints from Web UI: {len(waypoints)} points")
+        else:
+            waypoints = [
+                (0.0, 0.0, 2.0, 0.0),    # 1. Takeoff (z=2, yaw=0)
+                (2.0, 0.0, 2.0, 0.0),    # 2. Forward (x=2, yaw=0)
+                (-2.0, 0.0, 2.0, 0.0),   # 3. Backward (x=-2, yaw=0)
+                (0.0, 0.0, 2.0, 0.0),    # 4. Center (x=0, yaw=0)
+                (0.0, -2.0, 2.0, 0.0),   # 5. Right (y=-2, yaw=0)
+                (0.0, 2.0, 2.0, 0.0),    # 6. Left (y=2, yaw=0)
+                (0.0, 0.0, 2.0, 0.0),    # 7. Center (x=0, yaw=0)
+                (0.0, 0.0, 2.0, 90.0),   # 8. Rotate (yaw=90)
+                (0.0, 0.0, 2.0, 0.0)     # 9. Rotate back (yaw=0)
+            ]
+            self.get_logger().info("Using default waypoints")
         
         # --- ลูปภารกิจหลัก (Main Mission Loop) ---
         for idx, (x, y, z, yaw) in enumerate(waypoints):
