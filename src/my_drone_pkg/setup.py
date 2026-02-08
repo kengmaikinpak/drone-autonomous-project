@@ -28,7 +28,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            "takeoff_node = my_drone_pkg.takeoff_node:main",
+            "mission_control = my_drone_pkg.mission_control:main",
         ],
     },
 )
