@@ -11,13 +11,19 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 20
 }).addTo(map);
 
-// Drone Marker
+
+
 const droneIcon = L.divIcon({
     html: `
         <div class="relative">
-            <!-- ส่วนที่ทำหน้าที่เป็นตัวโดรนสีฟ้า (ใช้ Tailwind แทน .marker-pin) -->
-            <div class="absolute -top-4 -left-4 w-8 h-8 bg-blue-500 rounded-full border-0 border-white shadow-xl flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-drone-icon lucide-drone"><path d="M10 10 7 7"/><path d="m10 14-3 3"/><path d="m14 10 3-3"/><path d="m14 14 3 3"/><path d="M14.205 4.139a4 4 0 1 1 5.439 5.863"/><path d="M19.637 14a4 4 0 1 1-5.432 5.868"/><path d="M4.367 10a4 4 0 1 1 5.438-5.862"/><path d="M9.795 19.862a4 4 0 1 1-5.429-5.873"/><rect x="10" y="8" width="4" height="8" rx="1"/></svg>
+            <!-- 
+              Shape: Square with Top-Right corner sharp (rounded-tr-none), others full rounded.
+              Initial State (0 deg rotation): Points to Top-Right.
+              We control rotation in JS.
+             -->
+            <div class="absolute -top-5 -left-5 w-10 h-10 bg-blue-500 rounded-tl-full rounded-bl-full rounded-br-full rounded-tr-[200rem] border-2 border-white shadow-xl flex items-center justify-center">
+                <!-- Rotate SVG 45deg so it points to the sharp corner (Top-Right) -->
+                <svg style="transform: rotate(45deg);" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-drone-icon lucide-drone"><path d="M10 10 7 7"/><path d="m10 14-3 3"/><path d="m14 10 3-3"/><path d="m14 14 3 3"/><path d="M14.205 4.139a4 4 0 1 1 5.439 5.863"/><path d="M19.637 14a4 4 0 1 1-5.432 5.868"/><path d="M4.367 10a4 4 0 1 1 5.438-5.862"/><path d="M9.795 19.862a4 4 0 1 1-5.429-5.873"/><rect x="10" y="8" width="4" height="8" rx="1"/></svg>
             </div>
         </div>`,
     className: 'custom-div-icon'
@@ -26,7 +32,7 @@ const droneMarker = L.marker([14.039498, 100.606766], { icon: droneIcon }).addTo
 
 // 3. ROS 2 Connection Logic
 const ros = new ROSLIB.Ros({
-    url: 'ws://localhost:9090' // IP ของ Raspberry Pi 5 (Rosbridge)
+    url: 'ws://localhost:9090' // IP ของคอมพิวเตอร์ A (เครื่องที่รัน Rosbridge)
 });
 
 const connIndicator = document.getElementById('ros-conn-indicator');
@@ -76,6 +82,24 @@ stateSub.subscribe((msg) => {
     }
 
     updateHealthStatus('health-arm', msg.armed);
+
+    // Reset Mission Button if drone disarms (Mission Finished)
+    // Only reset if it has armed at least once (prevent immediate reset on start)
+    if (msg.armed) {
+        startBtn.dataset.hasArmed = 'true';
+    }
+
+    if (!msg.armed && startBtn.disabled) {
+        // If we were tracking an active mission (hasArmed=true)
+        if (startBtn.dataset.hasArmed === 'true') {
+            startBtn.disabled = false;
+            startBtn.innerText = 'START MISSION';
+            missionStatus.innerText = 'READY';
+            missionStatus.className = 'text-slate-500 font-bold';
+            console.log('Mission finished (Disarmed), button reset.');
+            startBtn.dataset.hasArmed = 'false'; // Reset state
+        }
+    }
 });
 
 const globalPosSub = new ROSLIB.Topic({
@@ -122,6 +146,25 @@ batterySub.subscribe((msg) => {
     document.getElementById('val-battery').innerText = Math.round(pct * 100) + '%';
 });
 
+// 14. Drone Marker & Heading
+const compassSub = new ROSLIB.Topic({
+    ros: ros,
+    name: '/mavros/global_position/compass_hdg',
+    messageType: 'std_msgs/msg/Float64'
+});
+
+compassSub.subscribe((msg) => {
+    const heading = msg.data;
+    const markerIcon = droneMarker.getElement();
+    if (markerIcon) {
+        const iconBody = markerIcon.querySelector('.bg-blue-500');
+        if (iconBody) {
+            iconBody.style.transform = `rotate(${heading - 45}deg)`;
+            iconBody.style.transition = 'transform 0.2s linear';
+        }
+    }
+});
+
 // Service Clients
 
 // 1. Mission Start (Custom Trigger)
@@ -132,6 +175,7 @@ const missionClient = new ROSLIB.Service({
 });
 
 startBtn.addEventListener('click', () => {
+    startBtn.dataset.hasArmed = 'false'; // Reset armed state tracking
     missionStatus.innerText = 'SENDING...';
     const req = new ROSLIB.ServiceRequest({});
 
@@ -148,19 +192,25 @@ startBtn.addEventListener('click', () => {
             missionStatus.className = 'text-red-500 font-bold';
         }
     }, (err) => {
-        console.error(err);
-        missionStatus.innerText = 'ERROR';
+        console.error('Service Call Error:', err);
+        missionStatus.innerText = 'ERROR (Check Console)';
         missionStatus.className = 'text-red-500 font-bold';
+        startBtn.disabled = false; // Re-enable button on error
+        startBtn.innerText = 'START MISSION';
     });
 });
 
 // 2. Land (Standard MAVROS)
 const landClient = new ROSLIB.Service({
     ros: ros, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL'
+    ros: ros, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL'
 });
 
 document.getElementById('btn-land').addEventListener('click', () => {
     const req = new ROSLIB.ServiceRequest({});
+    missionStatus.innerText = 'CANCELLING...';
+    missionStatus.className = 'text-orange-500 font-bold';
+
     landClient.callService(req, (res) => {
         console.log('Land Command Sent', res);
     });
@@ -171,7 +221,14 @@ document.getElementById('btn-land').addEventListener('click', () => {
 function updateHealthStatus(id, isHealthy) {
     const el = document.getElementById(id);
     if (!el) return;
+    const el = document.getElementById(id);
+    if (!el) return;
 
+    if (isHealthy) {
+        el.className = "p-2 bg-green-50 rounded-full text-green-500";
+    } else {
+        el.className = "p-2 bg-slate-50 rounded-full text-slate-400";
+    }
     if (isHealthy) {
         el.className = "p-2 bg-green-50 rounded-full text-green-500";
     } else {
@@ -286,8 +343,12 @@ function updateWaypointLines() {
         map.removeLayer(waypointLines);
     }
 
-    if (waypoints.length >= 2) {
-        const latlngs = waypoints.map(wp => [wp.lat, wp.lng]);
+    if (waypoints.length > 0) {
+        const dronePos = droneMarker.getLatLng();
+        const latlngs = [
+            [dronePos.lat, dronePos.lng],
+            ...waypoints.map(wp => [wp.lat, wp.lng])
+        ];
         waypointLines = L.polyline(latlngs, {
             color: '#f97316',
             weight: 3,
@@ -300,7 +361,7 @@ function updateWaypointLines() {
 // Update waypoint list UI
 function updateWaypointListUI() {
     if (waypoints.length === 0) {
-        waypointListEl.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-4">ยังไม่มี Waypoint</p>';
+        waypointListEl.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-4">Empty Waypoint</p>';
     } else {
         waypointListEl.innerHTML = waypoints.map((wp, i) => `
             <div class="flex items-center justify-between bg-slate-50 rounded-lg p-2">
@@ -334,16 +395,20 @@ function convertToLocalCoords(wps) {
     if (wps.length === 0) return [];
 
     const poses = [];
-    const baseLat = wps[0].lat;
-    const baseLng = wps[0].lng;
+    const dronePos = droneMarker.getLatLng();
+    const baseLat = dronePos.lat;
+    const baseLng = dronePos.lng;
 
     // Rough conversion: 1 degree lat ≈ 111320m, 1 degree lng ≈ 111320 * cos(lat)m
     const metersPerDegreeLat = 111320;
     const metersPerDegreeLng = 111320 * Math.cos(baseLat * Math.PI / 180);
 
     wps.forEach((wp, i) => {
-        const x = (wp.lat - baseLat) * metersPerDegreeLat;
-        const y = (wp.lng - baseLng) * metersPerDegreeLng;
+        // ENU Coordinate System: X = East, Y = North
+        // Latitude = North/South (Y axis)
+        // Longitude = East/West (X axis)
+        const x = (wp.lng - baseLng) * metersPerDegreeLng; // Longitude diff -> X (East)
+        const y = (wp.lat - baseLat) * metersPerDegreeLat; // Latitude diff  -> Y (North)
 
         poses.push({
             position: { x: x, y: y, z: wp.altitude },

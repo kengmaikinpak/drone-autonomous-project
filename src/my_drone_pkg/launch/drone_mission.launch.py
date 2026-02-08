@@ -44,10 +44,10 @@ def generate_launch_description():
             }.items()
         ),
 
-        # Run takeoff_node
+        # Run mission_control
         Node(
             package='my_drone_pkg',
-            executable='takeoff_node',
+            executable='mission_control',
             name='offboard_control_node',
             output='screen'
         ),
