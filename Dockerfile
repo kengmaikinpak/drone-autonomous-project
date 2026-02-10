@@ -1,4 +1,5 @@
-FROM osrf/ros:jazzy-desktop
+FROM ros:jazzy-ros-base
+# FROM osrf/ros:jazzy-desktop
 
 # ติดตั้ง MAVROS และ Dependencies
 RUN apt-get update && apt-get install -y \
