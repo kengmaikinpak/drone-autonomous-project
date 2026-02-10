@@ -1,4 +1,5 @@
 FROM ros:jazzy-ros-base
+#FROM osrf/ros:jazzy-desktop
 
 
 # ติดตั้ง MAVROS และ Dependencies (เพิ่มเครื่องมือที่จำเป็นสำหรับโดรน)

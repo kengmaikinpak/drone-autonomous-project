@@ -16,11 +16,11 @@ def generate_launch_description():
     # Declare dynamic IP arguments
     # กำหนด Argument สำหรับการเชื่อมต่อ (FCU URL)
     # ค่า Default ตั้งเป็น UDP สำหรับ SITL (localhost)
-    # แต่ถ้าจะใช้ USB ให้เปลี่ยนเป็น /dev/ttyACM0:57600 ตอนรันคำสั่ง
+    # แต่ถ้าจะใช้ USB ให้เปลี่ยนเป็น /dev/ttyACM0:921600 ตอนรันคำสั่ง
     fcu_url_arg = DeclareLaunchArgument(
         'fcu_url',
         default_value='udp://:14540@127.0.0.1:14557',
-        description='Connection port (such as fcu_url:=/dev/ttyACM0:57600 or fcu_url:=udp://:14540@[IP_ADDRESS]:14557)'
+        description='Connection port (such as fcu_url:=/dev/ttyACM0:921600 or fcu_url:=udp://:14540@[IP_ADDRESS]:14557)'
     )
 
     gcs_url_arg = DeclareLaunchArgument(
