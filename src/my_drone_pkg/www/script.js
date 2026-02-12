@@ -203,7 +203,6 @@ startBtn.addEventListener('click', () => {
 // 2. Land (Standard MAVROS)
 const landClient = new ROSLIB.Service({
     ros: ros, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL'
-    ros: ros, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL'
 });
 
 document.getElementById('btn-land').addEventListener('click', () => {
