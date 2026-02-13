@@ -221,14 +221,7 @@ document.getElementById('btn-land').addEventListener('click', () => {
 function updateHealthStatus(id, isHealthy) {
     const el = document.getElementById(id);
     if (!el) return;
-    const el = document.getElementById(id);
-    if (!el) return;
 
-    if (isHealthy) {
-        el.className = "p-2 bg-green-50 rounded-full text-green-500";
-    } else {
-        el.className = "p-2 bg-slate-50 rounded-full text-slate-400";
-    }
     if (isHealthy) {
         el.className = "p-2 bg-green-50 rounded-full text-green-500";
     } else {
