@@ -183,6 +183,25 @@ compassSub.subscribe((msg) => {
     }
 });
 
+// 14. Drone Marker & Heading
+const compassSub = new ROSLIB.Topic({
+    ros: ros,
+    name: '/mavros/global_position/compass_hdg',
+    messageType: 'std_msgs/msg/Float64'
+});
+
+compassSub.subscribe((msg) => {
+    const heading = msg.data;
+    const markerIcon = droneMarker.getElement();
+    if (markerIcon) {
+        const iconBody = markerIcon.querySelector('.bg-blue-500');
+        if (iconBody) {
+            iconBody.style.transform = `rotate(${heading - 45}deg)`;
+            iconBody.style.transition = 'transform 0.2s linear';
+        }
+    }
+});
+
 // Service Clients
 
 // 1. Mission Start (Custom Trigger)
