@@ -183,13 +183,6 @@ compassSub.subscribe((msg) => {
     }
 });
 
-// 14. Drone Marker & Heading
-const compassSub = new ROSLIB.Topic({
-    ros: ros,
-    name: '/mavros/global_position/compass_hdg',
-    messageType: 'std_msgs/msg/Float64'
-});
-
 compassSub.subscribe((msg) => {
     const heading = msg.data;
     const markerIcon = droneMarker.getElement();
