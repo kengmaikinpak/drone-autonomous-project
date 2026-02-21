@@ -4,8 +4,8 @@ services:
         container_name: drone_jazzy
         network_mode: host
         privileged: true # เพื่อให้คุยกับ USB/Serial ได้
-		devices:
-      		- /dev/ttyACM0:/dev/ttyACM0
+        devices:
+            - /dev/ttyACM0:/dev/ttyACM0
         volumes:
             - ./src:/ros2_ws/src
             - ./www:/ros2_ws/www

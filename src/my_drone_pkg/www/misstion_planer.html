@@ -21,14 +21,71 @@
 <body class="bg-slate-100 h-screen overflow-hidden">
 
 	<div class="flex h-full">
-		<!-- Sidebar -->
+		<!-- Main Navigation -->
+		<nav class="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-6 gap-6 z-30 flex-shrink-0">
+			<!-- Logo -->
+			<div class="mb-2">
+				<div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+					<i data-lucide="drone" class="w-6 h-6"></i>
+				</div>
+			</div>
+
+			<!-- Nav Items -->
+			<div class="flex flex-col gap-4 w-full px-3">
+				<!-- Mission Planner (Active) -->
+				<a href="misstion_planer.html" class="relative group">
+					<div class="w-full aspect-square flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 shadow-sm transition-all">
+						<i data-lucide="map" class="w-6 h-6"></i>
+					</div>
+					<!-- Tooltip -->
+					<div
+						class="absolute left-14 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-[10px] px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 font-bold tracking-wider">
+						Mission Planner
+						<div
+							class="absolute top-1/2 -translate-y-1/2 -left-1 border-t-4 border-t-transparent border-b-4 border-b-transparent border-r-4 border-r-slate-800">
+						</div>
+					</div>
+				</a>
+
+				<!-- Dashboard -->
+				<a href="dashboard.html" class="relative group">
+					<div
+						class="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-all">
+						<i data-lucide="layout-dashboard" class="w-6 h-6"></i>
+					</div>
+					<div
+						class="absolute left-14 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-[10px] px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 font-bold tracking-wider">
+						Dashboard
+						<div
+							class="absolute top-1/2 -translate-y-1/2 -left-1 border-t-4 border-t-transparent border-b-4 border-b-transparent border-r-4 border-r-slate-800">
+						</div>
+					</div>
+				</a>
+
+				<!-- Logs -->
+				<a href="log.html" class="relative group">
+					<div
+						class="w-full aspect-square flex items-center justify-center rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-all">
+						<i data-lucide="file-text" class="w-6 h-6"></i>
+					</div>
+					<div
+						class="absolute left-14 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-[10px] px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 font-bold tracking-wider">
+						Logs
+						<div
+							class="absolute top-1/2 -translate-y-1/2 -left-1 border-t-4 border-t-transparent border-b-4 border-b-transparent border-r-4 border-r-slate-800">
+						</div>
+					</div>
+				</a>
+			</div>
+		</nav>
+
+		<!-- Sidebar Panel -->
 		<aside class="w-80 bg-white shadow-xl z-20 flex flex-col border-r border-slate-200">
 			<!-- Header -->
 			<div class="p-4 border-b border-slate-100">
 				<div class="flex items-center justify-between mb-4">
 					<div class="flex items-center gap-2">
-						<i data-lucide="chevron-left" class="w-5 h-5 text-slate-400 cursor-pointer"></i>
-						<span class="font-bold text-slate-700">DRONE</span>
+						<span class="font-bold text-slate-700 uppercase tracking-wider">Mission Planner</span>
 						<span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
 					</div>
 					<div id="ros-conn-indicator" class="flex items-center gap-1">
