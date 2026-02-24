@@ -33,7 +33,6 @@ const droneMarker = L.marker([14.039498, 100.606766], { icon: droneIcon }).addTo
 // 3. ROS 2 Connection Logic
 const ros = new ROSLIB.Ros({
     url: 'ws://localhost:9090' // IP ของคอมพิวเตอร์ A (เครื่องที่รัน Rosbridge)
-    // url: 'ws://10.107.121.91:9090' // IP ของคอมพิวเตอร์ A (เครื่องที่รัน Rosbridge)
 });
 
 const connIndicator = document.getElementById('ros-conn-indicator');
@@ -42,9 +41,9 @@ const missionStatus = document.getElementById('mission-status');
 
 // Connection Events
 ros.on('connection', () => {
-    if (connIndicator) connIndicator.innerHTML = '<span class="text-[9px] font-bold text-green-500 uppercase">Online</span><div class="w-2 h-2 rounded-full bg-green-500"></div>';
+    connIndicator.innerHTML = '<span class="text-[9px] font-bold text-green-500 uppercase">Online</span><div class="w-2 h-2 rounded-full bg-green-500"></div>';
     updateHealthStatus('health-fcu', true);
-    if (startBtn) startBtn.disabled = false; // Enable button on connection
+    startBtn.disabled = false; // Enable button on connection
     // Simulate Wifi/CPU health
     setTimeout(() => {
         updateHealthStatus('health-wifi', true);
@@ -53,15 +52,15 @@ ros.on('connection', () => {
 });
 
 ros.on('error', () => {
-    if (connIndicator) connIndicator.innerHTML = '<span class="text-[9px] font-bold text-red-500 uppercase">Error</span><div class="w-2 h-2 rounded-full bg-red-500"></div>';
+    connIndicator.innerHTML = '<span class="text-[9px] font-bold text-red-500 uppercase">Error</span><div class="w-2 h-2 rounded-full bg-red-500"></div>';
     updateHealthStatus('health-fcu', false);
-    if (startBtn) startBtn.disabled = true;
+    startBtn.disabled = true;
 });
 
 ros.on('close', () => {
-    if (connIndicator) connIndicator.innerHTML = '<span class="text-[9px] font-bold text-slate-400 uppercase">Offline</span><div class="w-2 h-2 rounded-full bg-slate-400"></div>';
+    connIndicator.innerHTML = '<span class="text-[9px] font-bold text-slate-400 uppercase">Offline</span><div class="w-2 h-2 rounded-full bg-slate-400"></div>';
     updateHealthStatus('health-fcu', false);
-    if (startBtn) startBtn.disabled = true;
+    startBtn.disabled = true;
 });
 
 // Subscribers
@@ -70,42 +69,35 @@ const stateSub = new ROSLIB.Topic({
 });
 
 stateSub.subscribe((msg) => {
+    document.getElementById('val-mode').innerText = msg.mode;
+
+    // Style update based on mode
     const modeEl = document.getElementById('val-mode');
-    if (modeEl) {
-        modeEl.innerText = msg.mode;
-        // Style update based on mode
-        if (msg.mode === 'OFFBOARD') {
-            modeEl.className = 'font-bold text-green-500 uppercase';
-            if (missionStatus) {
-                missionStatus.innerText = 'MISSION ACTIVE';
-                missionStatus.className = 'text-green-500 font-bold';
-            }
-        } else {
-            modeEl.className = 'font-bold text-blue-500 uppercase';
-        }
+    if (msg.mode === 'OFFBOARD') {
+        modeEl.className = 'font-bold text-green-500 uppercase';
+        missionStatus.innerText = 'MISSION ACTIVE';
+        missionStatus.className = 'text-green-500 font-bold';
+    } else {
+        modeEl.className = 'font-bold text-blue-500 uppercase';
     }
 
     updateHealthStatus('health-arm', msg.armed);
 
     // Reset Mission Button if drone disarms (Mission Finished)
     // Only reset if it has armed at least once (prevent immediate reset on start)
-    if (startBtn) {
-        if (msg.armed) {
-            startBtn.dataset.hasArmed = 'true';
-        }
+    if (msg.armed) {
+        startBtn.dataset.hasArmed = 'true';
+    }
 
-        if (!msg.armed && startBtn.disabled) {
-            // If we were tracking an active mission (hasArmed=true)
-            if (startBtn.dataset.hasArmed === 'true') {
-                startBtn.disabled = false;
-                startBtn.innerText = 'START MISSION';
-                if (missionStatus) {
-                    missionStatus.innerText = 'READY';
-                    missionStatus.className = 'text-slate-500 font-bold';
-                }
-                console.log('Mission finished (Disarmed), button reset.');
-                startBtn.dataset.hasArmed = 'false'; // Reset state
-            }
+    if (!msg.armed && startBtn.disabled) {
+        // If we were tracking an active mission (hasArmed=true)
+        if (startBtn.dataset.hasArmed === 'true') {
+            startBtn.disabled = false;
+            startBtn.innerText = 'START MISSION';
+            missionStatus.innerText = 'READY';
+            missionStatus.className = 'text-slate-500 font-bold';
+            console.log('Mission finished (Disarmed), button reset.');
+            startBtn.dataset.hasArmed = 'false'; // Reset state
         }
     }
 });
@@ -118,14 +110,9 @@ globalPosSub.subscribe((msg) => {
     if (msg.latitude && msg.longitude) {
         const lat = msg.latitude.toFixed(6);
         const lon = msg.longitude.toFixed(6);
-        const coordsEl = document.getElementById('val-coords');
-        if (coordsEl) coordsEl.innerText = `${lat}, ${lon}`;
-        if (typeof droneMarker !== 'undefined') {
-            droneMarker.setLatLng([msg.latitude, msg.longitude]);
-        }
-        if (typeof map !== 'undefined') {
-            map.panTo([msg.latitude, msg.longitude]); // Follow drone
-        }
+        document.getElementById('val-coords').innerText = `${lat}, ${lon}`;
+        droneMarker.setLatLng([msg.latitude, msg.longitude]);
+        map.panTo([msg.latitude, msg.longitude]); // Follow drone
 
         // Simple GPS status check (if we have fix)
         updateHealthStatus('health-gps', msg.status.status >= 0);
@@ -138,8 +125,7 @@ const relAltSub = new ROSLIB.Topic({
 
 relAltSub.subscribe((msg) => {
     // Height from ground
-    const heightEl = document.getElementById('val-height');
-    if (heightEl) heightEl.innerText = msg.data.toFixed(1);
+    document.getElementById('val-height').innerText = msg.data.toFixed(1);
 });
 
 const vfrSub = new ROSLIB.Topic({
@@ -147,8 +133,7 @@ const vfrSub = new ROSLIB.Topic({
 });
 
 vfrSub.subscribe((msg) => {
-    const speedEl = document.getElementById('val-speed');
-    if (speedEl) speedEl.innerText = Math.round(msg.groundspeed * 3.6); // m/s to km/h
+    document.getElementById('val-speed').innerText = Math.round(msg.groundspeed * 3.6); // m/s to km/h
 });
 
 const batterySub = new ROSLIB.Topic({
@@ -158,8 +143,7 @@ const batterySub = new ROSLIB.Topic({
 batterySub.subscribe((msg) => {
     let pct = msg.percentage;
     if (pct > 1.0) pct /= 100.0; // Fix range if needed
-    const batEl = document.getElementById('val-battery');
-    if (batEl) batEl.innerText = Math.round(pct * 100) + '%';
+    document.getElementById('val-battery').innerText = Math.round(pct * 100) + '%';
 });
 
 // 14. Drone Marker & Heading
@@ -167,20 +151,6 @@ const compassSub = new ROSLIB.Topic({
     ros: ros,
     name: '/mavros/global_position/compass_hdg',
     messageType: 'std_msgs/msg/Float64'
-});
-
-compassSub.subscribe((msg) => {
-    const heading = msg.data;
-    if (typeof droneMarker !== 'undefined') {
-        const markerIcon = droneMarker.getElement();
-        if (markerIcon) {
-            const iconBody = markerIcon.querySelector('.bg-blue-500');
-            if (iconBody) {
-                iconBody.style.transform = `rotate(${heading - 45}deg)`;
-                iconBody.style.transition = 'transform 0.2s linear';
-            }
-        }
-    }
 });
 
 compassSub.subscribe((msg) => {
@@ -204,59 +174,46 @@ const missionClient = new ROSLIB.Service({
     serviceType: 'std_srvs/Trigger'
 });
 
-if (startBtn) {
-    startBtn.addEventListener('click', () => {
-        startBtn.dataset.hasArmed = 'false'; // Reset armed state tracking
-        if (missionStatus) missionStatus.innerText = 'SENDING...';
-        const req = new ROSLIB.ServiceRequest({});
+startBtn.addEventListener('click', () => {
+    startBtn.dataset.hasArmed = 'false'; // Reset armed state tracking
+    missionStatus.innerText = 'SENDING...';
+    const req = new ROSLIB.ServiceRequest({});
 
-        missionClient.callService(req, (result) => {
-            if (result.success) {
-                console.log('Mission Triggered');
-                if (missionStatus) {
-                    missionStatus.innerText = 'STARTED';
-                    missionStatus.className = 'text-green-500 font-bold';
-                }
-                startBtn.innerText = 'MISSION RUNNING';
-                startBtn.disabled = true;
-            } else {
-                console.error('Mission Failed');
-                if (missionStatus) {
-                    missionStatus.innerText = 'FAILED';
-                    missionStatus.className = 'text-red-500 font-bold';
-                }
-            }
-        }, (err) => {
-            console.error('Service Call Error:', err);
-            if (missionStatus) {
-                missionStatus.innerText = 'ERROR (Check Console)';
-                missionStatus.className = 'text-red-500 font-bold';
-            }
-            startBtn.disabled = false; // Re-enable button on error
-            startBtn.innerText = 'START MISSION';
-        });
+    missionClient.callService(req, (result) => {
+        if (result.success) {
+            console.log('Mission Triggered');
+            missionStatus.innerText = 'STARTED';
+            missionStatus.className = 'text-green-500 font-bold';
+            startBtn.innerText = 'MISSION RUNNING';
+            startBtn.disabled = true;
+        } else {
+            console.error('Mission Failed');
+            missionStatus.innerText = 'FAILED';
+            missionStatus.className = 'text-red-500 font-bold';
+        }
+    }, (err) => {
+        console.error('Service Call Error:', err);
+        missionStatus.innerText = 'ERROR (Check Console)';
+        missionStatus.className = 'text-red-500 font-bold';
+        startBtn.disabled = false; // Re-enable button on error
+        startBtn.innerText = 'START MISSION';
     });
-}
+});
 
 // 2. Land (Standard MAVROS)
 const landClient = new ROSLIB.Service({
     ros: ros, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL'
 });
 
-const landBtn = document.getElementById('btn-land');
-if (landBtn) {
-    landBtn.addEventListener('click', () => {
-        const req = new ROSLIB.ServiceRequest({});
-        if (missionStatus) {
-            missionStatus.innerText = 'CANCELLING...';
-            missionStatus.className = 'text-orange-500 font-bold';
-        }
+document.getElementById('btn-land').addEventListener('click', () => {
+    const req = new ROSLIB.ServiceRequest({});
+    missionStatus.innerText = 'CANCELLING...';
+    missionStatus.className = 'text-orange-500 font-bold';
 
-        landClient.callService(req, (res) => {
-            console.log('Land Command Sent', res);
-        });
+    landClient.callService(req, (res) => {
+        console.log('Land Command Sent', res);
     });
-}
+});
 
 
 // Helper: Update Health UI
@@ -323,11 +280,22 @@ function toggleMissionMode() {
 
 // Add waypoint
 function addWaypoint(latlng) {
+    const defaultAltInput = document.getElementById('input-default-alt');
+    let altitudeVal = 3.0; // Default altitude
+    if (defaultAltInput) {
+        const parsed = parseFloat(defaultAltInput.value);
+        if (!isNaN(parsed) && parsed > 0) {
+            altitudeVal = parsed;
+        } else {
+            defaultAltInput.value = "3.0";
+        }
+    }
+
     const index = waypoints.length;
     waypoints.push({
         lat: latlng.lat,
         lng: latlng.lng,
-        altitude: 2.0  // Default altitude
+        altitude: altitudeVal
     });
 
     // Add marker on map
@@ -404,7 +372,11 @@ function updateWaypointListUI() {
                     <span class="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">${i + 1}</span>
                     <div>
                         <p class="text-[10px] font-bold text-slate-700">${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}</p>
-                        <p class="text-[9px] text-slate-400">Alt: ${wp.altitude}m</p>
+                        <div class="flex items-center gap-1 mt-0.5">
+                            <span class="text-[9px] text-slate-400">Alt:</span>
+                            <input type="number" value="${wp.altitude}" onchange="updateWaypointAlt(${i}, this.value)" class="w-12 text-[10px] border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-600 bg-white focus:outline-none focus:border-blue-400" step="0.5" />
+                            <span class="text-[9px] text-slate-400">m</span>
+                        </div>
                     </div>
                 </div>
                 <button onclick="removeWaypoint(${i})" class="text-red-400 hover:text-red-600 p-1 transition">
@@ -416,6 +388,15 @@ function updateWaypointListUI() {
 
     waypointCountEl.textContent = `${waypoints.length} Waypoints`;
     lucide.createIcons();
+}
+
+function updateWaypointAlt(index, value) {
+    let alt = parseFloat(value);
+    if (isNaN(alt) || alt <= 0) {
+        alt = 3.0; // fallback
+    }
+    waypoints[index].altitude = alt;
+    updateWaypointListUI(); // refresh UI to format nicely
 }
 
 // ROS Publisher for waypoints
