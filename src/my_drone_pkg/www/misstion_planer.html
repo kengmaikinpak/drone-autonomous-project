@@ -329,6 +329,46 @@
 		</main>
 	</div>
 
+	<!-- Mission Complete Modal -->
+	<div id="mission-complete-modal"
+		class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+		<div class="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden border border-slate-200">
+			<!-- Header -->
+			<div class="p-4 bg-blue-600 text-white flex justify-between items-center">
+				<h2 class="font-bold text-lg tracking-wider">Flight Plan complete</h2>
+				<button id="btn-close-modal" class="hover:bg-white/20 p-1 rounded transition">
+					<i data-lucide="x" class="w-5 h-5"></i>
+				</button>
+			</div>
+			<!-- Body -->
+			<div class="p-6 flex flex-col gap-3">
+				<button id="btn-remove-plan"
+					class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-lg font-bold text-sm transition border border-slate-300 shadow-sm">
+					Remove plan from vehicle
+				</button>
+				<button id="btn-leave-plan"
+					class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-lg font-bold text-sm transition border border-slate-300 shadow-sm">
+					Leave plan on vehicle
+				</button>
+
+				<hr class="my-3 border-slate-200">
+
+				<button id="btn-resume-mission"
+					class="w-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 py-3 rounded-lg font-bold text-sm transition shadow-sm">
+					Resume Mission From Waypoint <span id="val-resume-wp">1</span>
+				</button>
+
+				<p class="text-[11px] text-slate-500 mt-2 leading-relaxed font-medium">
+					Resume Mission will rebuild the current mission from the last flown waypoint and upload it to the
+					vehicle for the next flight.
+				</p>
+				<p class="text-[11px] text-red-500 font-bold mt-1">
+					If you are changing batteries for Resume Mission do not disconnect from the vehicle.
+				</p>
+			</div>
+		</div>
+	</div>
+
 	<!-- External Script -->
 	<script src="script.js"></script>
 </body>

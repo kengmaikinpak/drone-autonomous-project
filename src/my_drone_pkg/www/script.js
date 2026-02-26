@@ -98,6 +98,7 @@ stateSub.subscribe((msg) => {
             missionStatus.className = 'text-slate-500 font-bold';
             console.log('Mission finished (Disarmed), button reset.');
             startBtn.dataset.hasArmed = 'false'; // Reset state
+            showMissionCompleteModal(); // Show modal when mission finishes
         }
     }
 });
@@ -486,3 +487,38 @@ function returnToHome() {
     console.log('Return to Home command');
     // Could call a ROS service here
 }
+
+// ===================================================
+// Mission Complete Modal Logic
+// ===================================================
+function showMissionCompleteModal() {
+    const modal = document.getElementById('mission-complete-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        lucide.createIcons(); // Re-render icons for modal if needed
+    }
+
+    // Update the waypoints info text if needed
+    const resumeWpEl = document.getElementById('val-resume-wp');
+    if (resumeWpEl) {
+        resumeWpEl.innerText = '1';
+    }
+}
+
+function hideMissionCompleteModal() {
+    const modal = document.getElementById('mission-complete-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+const btnCloseModal = document.getElementById('btn-close-modal');
+const btnLeavePlan = document.getElementById('btn-leave-plan');
+const btnRemovePlan = document.getElementById('btn-remove-plan');
+const btnResumeMission = document.getElementById('btn-resume-mission');
+
+if (btnCloseModal) btnCloseModal.addEventListener('click', hideMissionCompleteModal);
+if (btnLeavePlan) btnLeavePlan.addEventListener('click', hideMissionCompleteModal);
+if (btnRemovePlan) btnRemovePlan.addEventListener('click', () => {
+    clearWaypoints();
+    hideMissionCompleteModal();
+});
+if (btnResumeMission) btnResumeMission.addEventListener('click', hideMissionCompleteModal);
