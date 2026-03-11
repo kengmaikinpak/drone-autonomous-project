@@ -21,3 +21,13 @@ Thumbs.db
 
 # Mission data
 mission_data.csv
+
+# Node JS / React
+node_modules/
+dist/
+dist-ssr/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.vite/
