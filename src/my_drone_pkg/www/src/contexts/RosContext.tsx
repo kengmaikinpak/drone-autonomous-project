@@ -14,9 +14,9 @@ const defaultRosContext: RosContextType = {
   healthStatus: { gps: false, wifi: false, arm: false, gcs: false, fcu: false },
   homePosition: null,
   startMission: async () => ({ success: false, message: 'Not connected' }),
-  landDrone: () => {},
-  cancelMission: () => {},
-  returnToHome: () => {},
+  landDrone: async () => false,
+  cancelMission: async () => false,
+  returnToHome: async () => false,
   rosIp: 'localhost:9090',
   setRosIp: () => {},
 };
@@ -197,33 +197,51 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     });
   }, []);
 
-  const landDrone = useCallback(() => {
-    if (!rosRef.current) return;
+  const landDrone = useCallback(async (): Promise<boolean> => {
+    if (!rosRef.current) return false;
     const client = new ROSLIB.Service({
       ros: rosRef.current, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL',
     });
-    client.callService(new ROSLIB.ServiceRequest({}), (res: any) => {
-      console.log('Land Command Sent', res);
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({}), (res: any) => {
+        console.log('Land Command Sent', res);
+        resolve(res.success);
+      }, (err: string) => {
+        console.error('Land Command Error', err);
+        resolve(false);
+      });
     });
   }, []);
 
-  const cancelMission = useCallback(() => {
-    if (!rosRef.current) return;
+  const cancelMission = useCallback(async (): Promise<boolean> => {
+    if (!rosRef.current) return false;
     const client = new ROSLIB.Service({
       ros: rosRef.current, name: '/mavros/set_mode', serviceType: 'mavros_msgs/srv/SetMode',
     });
-    client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.LOITER' }), (res: any) => {
-      console.log('Cancel Mission (Loiter) Command Sent', res);
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.LOITER' }), (res: any) => {
+        console.log('Cancel Mission (Loiter) Command Sent', res);
+        resolve(res.mode_sent);
+      }, (err: string) => {
+        console.error('Cancel Mission Error', err);
+        resolve(false);
+      });
     });
   }, []);
 
-  const returnToHome = useCallback(() => {
-    if (!rosRef.current) return;
+  const returnToHome = useCallback(async (): Promise<boolean> => {
+    if (!rosRef.current) return false;
     const client = new ROSLIB.Service({
       ros: rosRef.current, name: '/mavros/set_mode', serviceType: 'mavros_msgs/srv/SetMode',
     });
-    client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.RTL' }), (res: any) => {
-      console.log('Return to Home (RTL) Command Sent', res);
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.RTL' }), (res: any) => {
+        console.log('Return to Home (RTL) Command Sent', res);
+        resolve(res.mode_sent);
+      }, (err: string) => {
+        console.error('Return to Home Error', err);
+        resolve(false);
+      });
     });
   }, []);
 

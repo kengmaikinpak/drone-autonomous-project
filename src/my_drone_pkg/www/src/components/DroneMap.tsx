@@ -109,6 +109,10 @@ const DroneMap: React.FC<DroneMapProps> = ({
     return () => {
       map.remove();
       mapInstanceRef.current = null;
+      droneMarkerRef.current = null;
+      homeMarkerRef.current = null;
+      waypointMarkersRef.current = [];
+      waypointLinesRef.current = null;
       setMap(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -41,9 +41,9 @@ export interface RosContextType {
   healthStatus: HealthStatus;
   homePosition: { lat: number; lng: number } | null;
   startMission: () => Promise<{ success: boolean; message: string }>;
-  landDrone: () => void;
-  cancelMission: () => void;
-  returnToHome: () => void;
+  landDrone: () => Promise<boolean>;
+  cancelMission: () => Promise<boolean>;
+  returnToHome: () => Promise<boolean>;
   rosIp: string;
   setRosIp: (ip: string) => void;
 }

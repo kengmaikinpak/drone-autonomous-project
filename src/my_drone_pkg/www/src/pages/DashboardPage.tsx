@@ -49,10 +49,17 @@ const DashboardPage: React.FC = () => {
       }
     } else if (action === 'LAND') {
       setMissionStatus('LANDING...', 'text-orange-500');
-      landDrone();
+      const success = await landDrone();
+      if (!success) setMissionStatus('IDLE', 'text-blue-500');
     } else if (action === 'CANCEL') {
       setMissionStatus('CANCELLING...', 'text-orange-500');
-      cancelMission();
+      const success = await cancelMission();
+      if (success) {
+        setIsRunning(false);
+        setMissionStatus('IDLE', 'text-blue-500');
+      } else {
+        setMissionStatus('IDLE', 'text-blue-500');
+      }
     }
   }, [pendingAction, startMission, landDrone, cancelMission, setMissionStatus]);
 
