@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import ROSLIB from 'roslib';
 import type { MissionContextType, Waypoint } from '@/types';
+import { useRos } from '@/contexts/RosContext';
 
 const defaultMissionContext: MissionContextType = {
   waypoints: [],
@@ -23,6 +24,19 @@ export const useMission = () => useContext(MissionContext);
 interface Props {
   children: React.ReactNode;
   rosUrl?: string;
+}
+
+/**
+ * แปลง lat/lng → Local ENU (เมตร) โดยอ้างอิงจาก origin ที่ระบุ
+ * origin คือ homePosition (GPS fix แรก) ซึ่งตรงกับตอนที่ MAVROS สร้าง Local Frame
+ */
+function latlngToENU(lat: number, lng: number, originLat: number, originLng: number) {
+  const metersPerDegreeLat = 111320;
+  const metersPerDegreeLng = 111320 * Math.cos(originLat * Math.PI / 180);
+  return {
+    x: (lng - originLng) * metersPerDegreeLng,  // ENU: East → +X
+    y: (lat - originLat) * metersPerDegreeLat,  // ENU: North → +Y
+  };
 }
 
 export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://localhost:9090' }) => {
@@ -90,9 +104,22 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
     setWaypoints(prev => prev.map((wp, i) => i === index ? { ...wp, altitude: alt } : wp));
   }, []);
 
+  const { homePosition } = useRos();
+
   const sendMissionToROS = useCallback(() => {
     if (waypoints.length === 0) {
       console.warn('No waypoints to send');
+      return;
+    }
+
+    // ใช้ homePosition (GPS fix แรก) เป็น ENU Origin
+    // เพราะ MAVROS ตั้ง Local Frame ณ ตอนที่รับ GPS ครั้งแรก ซึ่งตรงกับ homePosition
+    const originLat = homePosition?.lat;
+    const originLng = homePosition?.lng;
+
+    if (!originLat || !originLng) {
+      console.warn('Home position not established yet. Cannot send mission.');
+      setMissionStatus('HOME NOT SET', 'text-red-500');
       return;
     }
 
@@ -103,20 +130,14 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
       messageType: 'geometry_msgs/msg/PoseArray',
     });
 
-    // Convert lat/lng to local ENU coords relative to first waypoint
-    const baseLat = waypoints[0].lat;
-    const baseLng = waypoints[0].lng;
-    const metersPerDegreeLat = 111320;
-    const metersPerDegreeLng = 111320 * Math.cos(baseLat * Math.PI / 180);
-
-    const poses = waypoints.map(wp => ({
-      position: {
-        x: (wp.lng - baseLng) * metersPerDegreeLng,
-        y: (wp.lat - baseLat) * metersPerDegreeLat,
-        z: wp.altitude,
-      },
-      orientation: { x: 0, y: 0, z: 0, w: 1 },
-    }));
+    // แปลง lat/lng → Local ENU โดยอ้างอิงจาก GPS โดรน (origin)
+    const poses = waypoints.map(wp => {
+      const enu = latlngToENU(wp.lat, wp.lng, originLat, originLng);
+      return {
+        position: { x: enu.x, y: enu.y, z: wp.altitude },
+        orientation: { x: 0, y: 0, z: 0, w: 1 },
+      };
+    });
 
     const msg = new ROSLIB.Message({
       header: { stamp: { sec: 0, nanosec: 0 }, frame_id: 'map' },
@@ -124,9 +145,9 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
     });
 
     topic.publish(msg);
-    console.log('Mission waypoints sent to ROS:', poses);
+    console.log(`Mission sent (ENU origin: ${originLat.toFixed(6)}, ${originLng.toFixed(6)}):`, poses);
     setMissionStatus('WAYPOINTS SENT', 'text-green-500');
-  }, [waypoints, getRos, setMissionStatus]);
+  }, [waypoints, homePosition, getRos, setMissionStatus]);
 
   const value: MissionContextType = {
     waypoints,

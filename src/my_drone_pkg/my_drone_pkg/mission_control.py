@@ -57,15 +57,6 @@ class OffboardControl(Node):
         # ตัวแปรเก็บเป้าหมายตำแหน่ง
         self.target_pose = PoseStamped()
         
-        # สร้าง List สำหรับเก็บข้อมูลพล็อต
-        self.log_time = []
-        self.log_target_x = []
-        self.log_actual_x = []
-        self.log_target_y = []
-        self.log_actual_y = []
-        self.log_target_z = []
-        self.log_actual_z = []
-        
         self.get_logger().info("Node started. Waiting for MAVROS connection...")
 
     def state_callback(self, msg):
@@ -230,9 +221,10 @@ class OffboardControl(Node):
             
             # กำหนดลำดับ Waypoints
             # ใช้ waypoints จาก Web UI ถ้ามี ไม่งั้นใช้ค่าเริ่มต้น
-            if self.custom_waypoints and len(self.custom_waypoints) > 0:
+            using_custom = bool(self.custom_waypoints and len(self.custom_waypoints) > 0)
+            if using_custom:
                 waypoints = self.custom_waypoints
-                self.get_logger().info(f"Using custom waypoints from Web UI: {len(waypoints)} points")
+                self.get_logger().info(f"Using custom waypoints from Web UI: {len(waypoints)} points (Absolute coordinates)")
             else:
                 waypoints = [
                     (0.0, 0.0, 2.0, 0.0),    # 1. Takeoff (z=2, yaw=0)
@@ -245,13 +237,16 @@ class OffboardControl(Node):
                     (0.0, 0.0, 2.0, 90.0),   # 8. Rotate (yaw=90)
                     (0.0, 0.0, 2.0, 0.0)     # 9. Rotate back (yaw=0)
                 ]
-                self.get_logger().info("Using default waypoints")
+                self.get_logger().info("Using default waypoints (Relative to mission start)")
             
             # --- ลูปภารกิจหลัก (Main Mission Loop) ---
-            # Capture start position for relative waypoint calculation
+            # Capture start position for relative waypoint calculation (default waypoints only)
             mission_start_x = self.current_pose.pose.position.x
             mission_start_y = self.current_pose.pose.position.y
             self.get_logger().info(f"Mission Start Origin: ({mission_start_x}, {mission_start_y})")
+
+            # Timeout ต่อ Waypoint (วินาที)
+            WAYPOINT_TIMEOUT_SEC = 30.0
 
             for idx, (x, y, z, yaw) in enumerate(waypoints):
                 # Check exit condition at start of each waypoint
@@ -259,35 +254,35 @@ class OffboardControl(Node):
                     self.get_logger().info("Mission interrupted during waypoint loop.")
                     break
 
-                # Treat x, y as relative to mission start
-                self.target_pose.pose.position.x = mission_start_x + x
-                self.target_pose.pose.position.y = mission_start_y + y
+                # Custom waypoints จาก Web UI → ใช้พิกัด Absolute (map frame)
+                # Default waypoints → ใช้พิกัด Relative จาก mission_start
+                if using_custom:
+                    self.target_pose.pose.position.x = x
+                    self.target_pose.pose.position.y = y
+                else:
+                    self.target_pose.pose.position.x = mission_start_x + x
+                    self.target_pose.pose.position.y = mission_start_y + y
                 self.target_pose.pose.position.z = z
                 self.set_orientation_from_yaw(yaw)
                 
                 self.get_logger().info(f"Heading to Waypoint {idx+1}: ({self.target_pose.pose.position.x}, {self.target_pose.pose.position.y}, {z}, {yaw} degrees)")
                 
                 # ลูป "ไปที่เป้าหมาย" (Go-to Loop)
+                wp_start_time = self.get_clock().now()
                 while rclpy.ok():
                     # Check exit condition during flight
                     if self.current_state.mode != "OFFBOARD" or not self.current_state.armed:
                         self.get_logger().info("Mission interrupted during flight to waypoint.")
                         break
 
+                    # ตรวจสอบ Timeout
+                    elapsed = self.get_clock().now() - wp_start_time
+                    if elapsed > rclpy.duration.Duration(seconds=WAYPOINT_TIMEOUT_SEC):
+                        self.get_logger().warn(f"Waypoint {idx+1} timeout! Skipping to next waypoint.")
+                        break
+
                     self.target_pose.header.stamp = self.get_clock().now().to_msg()
                     self.pose_pub.publish(self.target_pose)
-                    
-                    
-                    # --- บันทึกข้อมูลลง List ---
-                    self.log_time.append(self.get_clock().now().nanoseconds)
-                    self.log_target_x.append(self.target_pose.pose.position.x)
-                    self.log_actual_x.append(self.current_pose.pose.position.x)
-                    self.log_target_y.append(self.target_pose.pose.position.y)
-                    self.log_actual_y.append(self.current_pose.pose.position.y)
-                    self.log_target_z.append(self.target_pose.pose.position.z)
-                    self.log_actual_z.append(self.current_pose.pose.position.z)
-                    # ------------------------------
-                    
                     
                     # ถ้าถึงเป้าหมายแล้ว ให้ออกจากลูป "go-to"
                     if self.is_at_target_position(tolerance=0.2):
@@ -315,17 +310,6 @@ class OffboardControl(Node):
                     self.target_pose.header.stamp = self.get_clock().now().to_msg()
                     self.pose_pub.publish(self.target_pose) # ส่ง setpoint เดิมต่อเนื่อง
                     rclpy.spin_once(self, timeout_sec=0.1)
-                    
-                    
-                    # --- บันทึกข้อมูลลง List ---
-                    self.log_time.append(self.get_clock().now().nanoseconds)
-                    self.log_target_x.append(self.target_pose.pose.position.x)
-                    self.log_actual_x.append(self.current_pose.pose.position.x)
-                    self.log_target_y.append(self.target_pose.pose.position.y)
-                    self.log_actual_y.append(self.current_pose.pose.position.y)
-                    self.log_target_z.append(self.target_pose.pose.position.z)
-                    self.log_actual_z.append(self.current_pose.pose.position.z)
-                    # ------------------------------    
                         
             # --- ภารกิจเสร็จสิ้น (Mission Complete) -> Hover ---
             if self.current_state.mode == "OFFBOARD" and self.current_state.armed:
@@ -354,7 +338,7 @@ class OffboardControl(Node):
 
             self.get_logger().info("Landed and disarmed. Mission Cycle Complete.")
             self.mission_started = False  # Reset for next mission loop
-            self.custom_waypoints = None  # Reset waypoints check to ensure we wait for new ones or use default correctly
+            # custom_waypoints ถูกเก็บไว้ใช้งานซ้ำได้จนกว่าจะมีชุดใหม่จาก Web UI
                 
 def main(args=None):
     rclpy.init(args=args)
