@@ -101,6 +101,22 @@ class OffboardControl(Node):
         self.target_pose.pose.orientation.y = 0.0
         self.target_pose.pose.orientation.z = sy
 
+    def calc_bearing_to_target(self):
+        """
+        คำนวณมุม Yaw (องศา) จากตำแหน่งปัจจุบันไปยัง target_pose ใน Local ENU frame
+        ENU: X = East, Y = North
+        atan2(dx, dy) → Bearing จาก North ตามเข็มนาฬิกา (เหมือน Compass)
+        """
+        dx = self.target_pose.pose.position.x - self.current_pose.pose.position.x
+        dy = self.target_pose.pose.position.y - self.current_pose.pose.position.y
+        # ถ้าอยู่ใกล้มากพอ ไม่ต้องหมุน
+        if math.sqrt(dx**2 + dy**2) < 0.3:
+            return None
+        # ใน ENU: yaw 0 = East, yaw 90 = North
+        # แต่ ROS/PX4 ใช้ yaw 0 = East, yaw 90° = North
+        bearing_rad = math.atan2(dy, dx)  # atan2(north-component, east-component)
+        return math.degrees(bearing_rad)
+
     def mode_response_callback(self, future):
         try:
             response = future.result()
@@ -254,17 +270,24 @@ class OffboardControl(Node):
                     self.get_logger().info("Mission interrupted during waypoint loop.")
                     break
 
-                # Custom waypoints จาก Web UI → ใช้พิกัด Absolute (map frame)
-                # Default waypoints → ใช้พิกัด Relative จาก mission_start
-                if using_custom:
-                    self.target_pose.pose.position.x = x
-                    self.target_pose.pose.position.y = y
-                else:
-                    self.target_pose.pose.position.x = mission_start_x + x
-                    self.target_pose.pose.position.y = mission_start_y + y
+                # Waypoints ทั้งหมดเป็น Relative offset จากตำแหน่งโดรนตอนเริ่มภารกิจ
+                # (Web UI ส่ง offset จาก GPS ปัจจุบัน, Default WP ก็เป็น offset อยู่แล้ว)
+                self.target_pose.pose.position.x = mission_start_x + x
+                self.target_pose.pose.position.y = mission_start_y + y
                 self.target_pose.pose.position.z = z
-                self.set_orientation_from_yaw(yaw)
-                
+                # คำนวณทิศทาง (Yaw) ที่จะหันหน้าไปยัง Waypoint ปัจจุบัน
+                # ถ้า Custom WP หรือค่า yaw ใน default เป็น 0 → ใช้ Bearing จากตำแหน่งปัจจุบัน
+                # ถ้า default WP กำหนด yaw (!=0) ไว้ชัดเจน → ใช้ค่านั้น (เช่น WP หมุนตัว)
+                if using_custom or yaw == 0.0:
+                    bearing = self.calc_bearing_to_target()
+                    if bearing is not None:
+                        self.set_orientation_from_yaw(bearing)
+                        self.get_logger().info(
+                            f"Waypoint {idx+1}: Auto-yaw to bearing {bearing:.1f}°"
+                        )
+                else:
+                    self.set_orientation_from_yaw(yaw)
+
                 self.get_logger().info(f"Heading to Waypoint {idx+1}: ({self.target_pose.pose.position.x}, {self.target_pose.pose.position.y}, {z}, {yaw} degrees)")
                 
                 # ลูป "ไปที่เป้าหมาย" (Go-to Loop)

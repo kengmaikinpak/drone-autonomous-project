@@ -104,7 +104,7 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
     setWaypoints(prev => prev.map((wp, i) => i === index ? { ...wp, altitude: alt } : wp));
   }, []);
 
-  const { homePosition } = useRos();
+  const { gpsData, homePosition } = useRos();
 
   const sendMissionToROS = useCallback(() => {
     if (waypoints.length === 0) {
@@ -112,14 +112,14 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
       return;
     }
 
-    // ใช้ homePosition (GPS fix แรก) เป็น ENU Origin
-    // เพราะ MAVROS ตั้ง Local Frame ณ ตอนที่รับ GPS ครั้งแรก ซึ่งตรงกับ homePosition
-    const originLat = homePosition?.lat;
-    const originLng = homePosition?.lng;
+    // ใช้ตำแหน่ง GPS ปัจจุบันของโดรน ณ ตอนกดส่ง เป็น ENU Origin
+    // เพราะ mission_control.py ใช้ current_pose เป็นจุดเริ่มต้น
+    const originLat = gpsData.latitude;
+    const originLng = gpsData.longitude;
 
     if (!originLat || !originLng) {
-      console.warn('Home position not established yet. Cannot send mission.');
-      setMissionStatus('HOME NOT SET', 'text-red-500');
+      console.warn('Drone GPS not available yet. Cannot send mission.');
+      setMissionStatus('GPS NOT READY', 'text-red-500');
       return;
     }
 
@@ -130,7 +130,7 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
       messageType: 'geometry_msgs/msg/PoseArray',
     });
 
-    // แปลง lat/lng → Local ENU โดยอ้างอิงจาก GPS โดรน (origin)
+    // แปลง lat/lng → Local ENU โดยอ้างอิงจาก GPS โดรนปัจจุบัน (origin)
     const poses = waypoints.map(wp => {
       const enu = latlngToENU(wp.lat, wp.lng, originLat, originLng);
       return {
@@ -147,7 +147,7 @@ export const MissionProvider: React.FC<Props> = ({ children, rosUrl = 'ws://loca
     topic.publish(msg);
     console.log(`Mission sent (ENU origin: ${originLat.toFixed(6)}, ${originLng.toFixed(6)}):`, poses);
     setMissionStatus('WAYPOINTS SENT', 'text-green-500');
-  }, [waypoints, homePosition, getRos, setMissionStatus]);
+  }, [waypoints, gpsData, getRos, setMissionStatus]);
 
   const value: MissionContextType = {
     waypoints,

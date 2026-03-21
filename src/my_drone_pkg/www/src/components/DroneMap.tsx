@@ -16,6 +16,16 @@ const DRONE_ICON_HTML = `
     </div>
 </div>`;
 
+const HOME_ICON_HTML = `
+<div class="relative">
+  <div class="absolute -top-5 -left-5 w-10 h-10 bg-green-500 rounded-full border-2 border-white shadow-xl flex items-center justify-center text-white">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+      <polyline points="9 22 9 12 15 12 15 22"></polyline>
+    </svg>
+  </div>
+</div>`;
+
 function createWaypointIcon(number: number): L.DivIcon {
   return L.divIcon({
     html: `
@@ -46,6 +56,7 @@ const DroneMap: React.FC<DroneMapProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const droneMarkerRef = useRef<L.Marker | null>(null);
+  const homeMarkerRef = useRef<L.Marker | null>(null);
   const waypointMarkersRef = useRef<L.Marker[]>([]);
   const waypointLinesRef = useRef<L.Polyline | null>(null);
   const onMapClickRef = useRef(onMapClick);
@@ -77,7 +88,10 @@ const DroneMap: React.FC<DroneMapProps> = ({
       className: 'custom-div-icon',
     });
 
-    const marker = L.marker([14.039498, 100.606766], { icon: droneIcon }).addTo(map);
+    const marker = L.marker([14.039498, 100.606766], { 
+      icon: droneIcon,
+      zIndexOffset: 1000 // ให้โดรนอยู่บนสุดเสมอ
+    }).addTo(map);
     droneMarkerRef.current = marker;
     mapInstanceRef.current = map;
     setMap(map);
@@ -115,6 +129,25 @@ const DroneMap: React.FC<DroneMapProps> = ({
       mapInstanceRef.current.panTo([gpsData.latitude, gpsData.longitude]);
     }
   }, [gpsData.latitude, gpsData.longitude]);
+
+  // Update home position marker
+  useEffect(() => {
+    if (!mapInstanceRef.current || !homePosition) return;
+    const map = mapInstanceRef.current;
+
+    if (!homeMarkerRef.current) {
+      const homeIcon = L.divIcon({
+        html: HOME_ICON_HTML,
+        className: 'custom-div-icon',
+      });
+      homeMarkerRef.current = L.marker([homePosition.lat, homePosition.lng], { 
+        icon: homeIcon,
+        zIndexOffset: -100 // ให้บ้านอยู่ล่างสุด
+      }).addTo(map);
+    } else {
+      homeMarkerRef.current.setLatLng([homePosition.lat, homePosition.lng]);
+    }
+  }, [homePosition]);
 
   // Update drone heading
   useEffect(() => {
@@ -157,11 +190,6 @@ const DroneMap: React.FC<DroneMapProps> = ({
 
       if (homePosition) {
         latlngs.push([homePosition.lat, homePosition.lng]);
-      }
-
-      if (droneMarkerRef.current) {
-        const pos = droneMarkerRef.current.getLatLng();
-        latlngs.push([pos.lat, pos.lng]);
       }
 
       waypoints.forEach(wp => latlngs.push([wp.lat, wp.lng]));

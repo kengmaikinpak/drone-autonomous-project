@@ -8,76 +8,53 @@ import { useMission } from '@/contexts/MissionContext';
 import DroneMap from '@/components/DroneMap';
 import HealthIndicators from '@/components/HealthIndicators';
 import { MapProvider } from '@/contexts/MapContext';
+import SlideConfirmModal from '@/components/SlideConfirmModal';
+
+type ActionType = 'START' | 'CANCEL' | 'LAND' | null;
+
+const actionDetails = {
+  START: { title: 'START MISSION', desc: 'Send waypoints and begin offboard flight.' },
+  CANCEL: { title: 'CANCEL MISSION', desc: 'Stop the drone immediately and loiter.' },
+  LAND: { title: 'AUTO LAND', desc: 'Command the drone to land at its current position.' },
+};
 
 const DashboardPage: React.FC = () => {
   const {
     connectionStatus, droneState, gpsData, altitude, speed, battery,
-    homePosition, startMission, landDrone, cancelMission,
+    homePosition, startMission, landDrone, cancelMission, flightTime,
   } = useRos();
   const { waypoints, missionStatus, missionStatusClass, setMissionStatus } = useMission();
 
   const [isRunning, setIsRunning] = useState(false);
   const [hasArmed, setHasArmed] = useState(false);
+  const [pendingAction, setPendingAction] = useState<ActionType>(null);
   const prevArmedRef = useRef(false);
 
-  // Flight timer
-  const [flightTime, setFlightTime] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handleStartMission = useCallback(() => setPendingAction('START'), []);
+  const handleLand = useCallback(() => setPendingAction('LAND'), []);
+  const handleCancelMission = useCallback(() => setPendingAction('CANCEL'), []);
 
-  useEffect(() => {
-    if (droneState.armed && !timerRef.current) {
-      timerRef.current = setInterval(() => setFlightTime(t => t + 1), 1000);
+  const executeAction = useCallback(async () => {
+    const action = pendingAction;
+    setPendingAction(null);
+
+    if (action === 'START') {
+      setMissionStatus('SENDING...', 'text-orange-500');
+      const result = await startMission();
+      if (result.success) {
+        setIsRunning(true);
+        setMissionStatus('STARTED', 'text-green-500');
+      } else {
+        setMissionStatus('FAILED', 'text-red-500');
+      }
+    } else if (action === 'LAND') {
+      setMissionStatus('LANDING...', 'text-orange-500');
+      landDrone();
+    } else if (action === 'CANCEL') {
+      setMissionStatus('CANCELLING...', 'text-orange-500');
+      cancelMission();
     }
-    if (!droneState.armed && timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [droneState.armed]);
-
-  // Detect disarm => mission complete
-  useEffect(() => {
-    if (droneState.armed) {
-      setHasArmed(true);
-      prevArmedRef.current = true;
-    }
-    if (!droneState.armed && prevArmedRef.current && hasArmed) {
-      setIsRunning(false);
-      setMissionStatus('READY', 'text-slate-500');
-      prevArmedRef.current = false;
-      setHasArmed(false);
-    }
-  }, [droneState.armed, hasArmed, setMissionStatus]);
-
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  };
-
-  const handleStartMission = useCallback(async () => {
-    setMissionStatus('SENDING...', 'text-orange-500');
-    const result = await startMission();
-    if (result.success) {
-      setIsRunning(true);
-      setMissionStatus('STARTED', 'text-green-500');
-    } else {
-      setMissionStatus('FAILED', 'text-red-500');
-    }
-  }, [startMission, setMissionStatus]);
-
-  const handleLand = useCallback(() => {
-    setMissionStatus('LANDING...', 'text-orange-500');
-    landDrone();
-  }, [landDrone, setMissionStatus]);
-
-  const handleCancelMission = useCallback(() => {
-    setMissionStatus('CANCELLING...', 'text-orange-500');
-    cancelMission();
-  }, [cancelMission, setMissionStatus]);
+  }, [pendingAction, startMission, landDrone, cancelMission, setMissionStatus]);
 
   const connLabel =
     connectionStatus === 'connected' ? 'Online' :
@@ -146,7 +123,7 @@ const DashboardPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-slate-800">{formatTime(flightTime)}</div>
+                <div className="text-2xl font-bold text-slate-800">{flightTime}</div>
                 <div className="text-[10px] font-bold text-slate-400 mt-1">Session Active</div>
               </div>
             </div>
@@ -246,6 +223,15 @@ const DashboardPage: React.FC = () => {
                 <Layers className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Slide to Confirm Action Modal */}
+            <SlideConfirmModal
+              isOpen={pendingAction !== null}
+              title={pendingAction ? actionDetails[pendingAction].title : ''}
+              description={pendingAction ? actionDetails[pendingAction].desc : ''}
+              onConfirm={executeAction}
+              onCancel={() => setPendingAction(null)}
+            />
           </div>
 
           {/* RIGHT COLUMN */}
@@ -324,6 +310,7 @@ const DashboardPage: React.FC = () => {
             </div>
           </div>
         </div>
+
       </main>
     </MapProvider>
   );

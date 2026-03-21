@@ -9,12 +9,22 @@ import DroneMap from '@/components/DroneMap';
 import HealthIndicators from '@/components/HealthIndicators';
 import SettingsModal from '@/components/SettingsModal';
 import { MapProvider, useMap } from '@/contexts/MapContext';
+import SlideConfirmModal from '@/components/SlideConfirmModal';
+
+type ActionType = 'START' | 'CANCEL' | 'LAND' | 'RTL' | null;
+
+const actionDetails = {
+  START: { title: 'START MISSION', desc: 'Send waypoints and begin offboard flight.' },
+  CANCEL: { title: 'CANCEL MISSION', desc: 'Stop the drone immediately and loiter.' },
+  LAND: { title: 'AUTO LAND', desc: 'Command the drone to land at its current position.' },
+  RTL: { title: 'RTL', desc: 'Return to the home position of the vehicle.' },
+};
 
 // Inner component that uses MapContext
 const MissionPlannerInner: React.FC = () => {
   const {
     connectionStatus, droneState, gpsData, altitude, speed, battery,
-    homePosition, startMission, landDrone, cancelMission,
+    homePosition, startMission, landDrone, cancelMission, returnToHome, flightTime,
   } = useRos();
   const {
     waypoints, missionStatus, missionStatusClass, addWaypoint, removeWaypoint,
@@ -26,8 +36,8 @@ const MissionPlannerInner: React.FC = () => {
   const [missionMode, setMissionMode] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<ActionType>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [flightTime, setFlightTime] = useState('--:--');
   const [hasArmed, setHasArmed] = useState(false);
   const prevArmedRef = useRef(false);
 
@@ -76,36 +86,41 @@ const MissionPlannerInner: React.FC = () => {
     clearWaypoints();
   }, [clearWaypoints]);
 
-  const handleStartMission = useCallback(async () => {
-    setMissionStatus('SENDING...', 'text-orange-500');
-    const result = await startMission();
-    if (result.success) {
-      setIsRunning(true);
-      setMissionStatus('STARTED', 'text-green-500');
-    } else {
-      setMissionStatus('FAILED', 'text-red-500');
+  const handleStartMission = useCallback(() => setPendingAction('START'), []);
+  const handleLand = useCallback(() => setPendingAction('LAND'), []);
+  const handleCancelMission = useCallback(() => setPendingAction('CANCEL'), []);
+  const handleReturnToHome = useCallback(() => setPendingAction('RTL'), []);
+
+  const executeAction = useCallback(async () => {
+    const action = pendingAction;
+    setPendingAction(null); // Close modal immediately
+
+    if (action === 'START') {
+      setMissionStatus('SENDING...', 'text-orange-500');
+      const result = await startMission();
+      if (result.success) {
+        setIsRunning(true);
+        setMissionStatus('STARTED', 'text-green-500');
+      } else {
+        setMissionStatus('FAILED', 'text-red-500');
+      }
+    } else if (action === 'LAND') {
+      setMissionStatus('LANDING...', 'text-orange-500');
+      landDrone();
+    } else if (action === 'CANCEL') {
+      setMissionStatus('CANCELLING...', 'text-orange-500');
+      cancelMission();
+    } else if (action === 'RTL') {
+      setMissionStatus('RETURNING...', 'text-orange-500');
+      returnToHome();
     }
-  }, [startMission, setMissionStatus]);
-
-  const handleLand = useCallback(() => {
-    setMissionStatus('LANDING...', 'text-orange-500');
-    landDrone();
-  }, [landDrone, setMissionStatus]);
-
-  const handleCancelMission = useCallback(() => {
-    setMissionStatus('CANCELLING...', 'text-orange-500');
-    cancelMission();
-  }, [cancelMission, setMissionStatus]);
+  }, [pendingAction, startMission, landDrone, cancelMission, returnToHome, setMissionStatus]);
 
   const centerMapOnDrone = useCallback(() => {
     if (map && gpsData.latitude && gpsData.longitude) {
       map.setView([gpsData.latitude, gpsData.longitude], 18);
     }
   }, [map, gpsData]);
-
-  const returnToHome = useCallback(() => {
-    console.log('Return to Home command');
-  }, []);
 
   return (
     <div className="flex-1 flex h-full overflow-hidden">
@@ -220,12 +235,12 @@ const MissionPlannerInner: React.FC = () => {
         <div className="p-4 border-t border-slate-100 flex justify-between items-center">
           <div className="flex gap-6">
             <button
-              onClick={returnToHome}
+              onClick={handleReturnToHome}
               className="btn-circle tooltip-left bg-blue-50 text-blue-600 hover:bg-blue-100 group"
             >
               <Home className="w-4 h-4" />
               <div className="tooltip-text">
-                Return to base
+                Return to Home
                 <div className="tooltip-arrow" />
               </div>
             </button>
@@ -382,6 +397,15 @@ const MissionPlannerInner: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {/* Slide to Confirm Action Modal (Centered on Map) */}
+        <SlideConfirmModal
+          isOpen={pendingAction !== null}
+          title={pendingAction ? actionDetails[pendingAction].title : ''}
+          description={pendingAction ? actionDetails[pendingAction].desc : ''}
+          onConfirm={executeAction}
+          onCancel={() => setPendingAction(null)}
+        />
       </main>
 
       {/* Mission Complete Modal */}

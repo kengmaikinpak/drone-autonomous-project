@@ -10,11 +10,13 @@ const defaultRosContext: RosContextType = {
   speed: 0,
   battery: -1,
   heading: 0,
+  flightTime: '--:--',
   healthStatus: { gps: false, wifi: false, arm: false, gcs: false, fcu: false },
   homePosition: null,
   startMission: async () => ({ success: false, message: 'Not connected' }),
   landDrone: () => {},
   cancelMission: () => {},
+  returnToHome: () => {},
   rosIp: 'localhost:9090',
   setRosIp: () => {},
 };
@@ -41,6 +43,35 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     gps: false, wifi: false, arm: false, gcs: false, fcu: false,
   });
   const [homePosition, setHomePosition] = useState<{ lat: number; lng: number } | null>(null);
+
+  const [flightSeconds, setFlightSeconds] = useState(0);
+  const flightTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Flight Timer: Starts when armed, stops and stores time when disarmed
+  useEffect(() => {
+    if (droneState.armed) {
+      setFlightSeconds(0);
+      flightTimerRef.current = setInterval(() => {
+        setFlightSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (flightTimerRef.current) {
+        clearInterval(flightTimerRef.current);
+        flightTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (flightTimerRef.current) clearInterval(flightTimerRef.current);
+    };
+  }, [droneState.armed]);
+
+  const flightTime = React.useMemo(() => {
+    if (flightSeconds === 0 && !droneState.armed) return '--:--';
+    const h = Math.floor(flightSeconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((flightSeconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (flightSeconds % 60).toString().padStart(2, '0');
+    return h === '00' ? `${m}:${s}` : `${h}:${m}:${s}`;
+  }, [flightSeconds, droneState.armed]);
 
   const updateHealth = useCallback((key: keyof HealthStatus, value: boolean) => {
     setHealthStatus(prev => ({ ...prev, [key]: value }));
@@ -116,7 +147,7 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
 
     // Speed subscriber
     const vfrSub = new ROSLIB.Topic({
-      ros, name: '/mavros/vfr_hud', messageType: 'mavros_msgs/msg/VFR_HUD',
+      ros, name: '/mavros/vfr_hud', messageType: 'mavros_msgs/msg/VfrHud',
     });
     vfrSub.subscribe((msg: any) => {
       setSpeed(Math.round(msg.groundspeed * 3.6));
@@ -186,6 +217,16 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     });
   }, []);
 
+  const returnToHome = useCallback(() => {
+    if (!rosRef.current) return;
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mavros/set_mode', serviceType: 'mavros_msgs/srv/SetMode',
+    });
+    client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.RTL' }), (res: any) => {
+      console.log('Return to Home (RTL) Command Sent', res);
+    });
+  }, []);
+
   const value: RosContextType = {
     connectionStatus,
     droneState,
@@ -194,11 +235,13 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     speed,
     battery,
     heading,
+    flightTime,
     healthStatus,
     homePosition,
     startMission,
     landDrone,
     cancelMission,
+    returnToHome,
     rosIp,
     setRosIp,
   };
