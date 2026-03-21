@@ -13,11 +13,10 @@ const NavItem: React.FC<NavItemProps> = ({ to, icon, label }) => (
     {({ isActive }) => (
       <>
         <div
-          className={`w-full aspect-square flex items-center justify-center rounded-xl transition-all ${
-            isActive
+          className={`w-full aspect-square flex items-center justify-center rounded-xl transition-all ${isActive
               ? 'bg-blue-50 text-blue-600 shadow-sm'
               : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
-          }`}
+            }`}
         >
           {icon}
         </div>
@@ -42,8 +41,8 @@ const Sidebar: React.FC = () => {
 
       {/* Nav Items */}
       <div className="flex flex-col gap-4 w-full px-3">
-        <NavItem to="/mission" icon={<Map className="w-6 h-6" />} label="Mission Planner" />
-        <NavItem to="/" icon={<LayoutDashboard className="w-6 h-6" />} label="Dashboard" />
+        <NavItem to="/" icon={<Map className="w-6 h-6" />} label="Mission Planner" />
+        <NavItem to="/dashboard" icon={<LayoutDashboard className="w-6 h-6" />} label="Dashboard" />
         <NavItem to="/logs" icon={<FileText className="w-6 h-6" />} label="Logs" />
       </div>
     </nav>

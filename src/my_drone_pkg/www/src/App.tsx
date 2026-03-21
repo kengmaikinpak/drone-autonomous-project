@@ -13,8 +13,8 @@ const App: React.FC = () => {
         <div className="flex h-screen overflow-hidden text-slate-700">
           <Sidebar />
           <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/mission" element={<MissionPlannerPage />} />
+            <Route path="/" element={<MissionPlannerPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
           </Routes>
         </div>
       </MissionProvider>
