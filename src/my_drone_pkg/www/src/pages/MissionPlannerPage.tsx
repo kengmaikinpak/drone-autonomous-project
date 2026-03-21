@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Gauge, ArrowUp, Clock, Battery as BatteryIcon, Target, X, Trash2,
   Home, Plane, MapPin, Settings, PlaneTakeoff,
@@ -14,7 +14,7 @@ import { MapProvider, useMap } from '@/contexts/MapContext';
 const MissionPlannerInner: React.FC = () => {
   const {
     connectionStatus, droneState, gpsData, altitude, speed, battery,
-    homePosition, startMission, landDrone,
+    homePosition, startMission, landDrone, cancelMission,
   } = useRos();
   const {
     waypoints, missionStatus, missionStatusClass, addWaypoint, removeWaypoint,
@@ -28,14 +28,33 @@ const MissionPlannerInner: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [flightTime, setFlightTime] = useState('--:--');
+  const [hasArmed, setHasArmed] = useState(false);
+  const prevArmedRef = useRef(false);
+
+  // Detect disarm => mission complete/cancelled
+  useEffect(() => {
+    if (droneState.armed) {
+      setHasArmed(true);
+      prevArmedRef.current = true;
+    }
+    if (!droneState.armed && prevArmedRef.current && hasArmed) {
+      if (isRunning) {
+        setShowModal(true);
+      }
+      setIsRunning(false);
+      setMissionStatus('READY', 'text-green-500');
+      prevArmedRef.current = false;
+      setHasArmed(false);
+    }
+  }, [droneState.armed, hasArmed, isRunning, setMissionStatus]);
 
   const connLabel =
     connectionStatus === 'connected' ? 'Online' :
-    connectionStatus === 'error' ? 'Error' :
-    connectionStatus === 'closed' ? 'Offline' : 'Connecting...';
+      connectionStatus === 'error' ? 'Error' :
+        connectionStatus === 'closed' ? 'Offline' : 'Connecting...';
   const connColor =
     connectionStatus === 'connected' ? 'text-green-500 bg-green-500' :
-    connectionStatus === 'error' ? 'text-red-500 bg-red-500' : 'text-slate-400 bg-slate-400';
+      connectionStatus === 'error' ? 'text-red-500 bg-red-500' : 'text-slate-400 bg-slate-400';
   const connParts = connColor.split(' ');
 
   const toggleMissionMode = useCallback(() => {
@@ -69,9 +88,14 @@ const MissionPlannerInner: React.FC = () => {
   }, [startMission, setMissionStatus]);
 
   const handleLand = useCallback(() => {
-    setMissionStatus('CANCELLING...', 'text-orange-500');
+    setMissionStatus('LANDING...', 'text-orange-500');
     landDrone();
   }, [landDrone, setMissionStatus]);
+
+  const handleCancelMission = useCallback(() => {
+    setMissionStatus('CANCELLING...', 'text-orange-500');
+    cancelMission();
+  }, [cancelMission, setMissionStatus]);
 
   const centerMapOnDrone = useCallback(() => {
     if (map && gpsData.latitude && gpsData.longitude) {
@@ -176,14 +200,17 @@ const MissionPlannerInner: React.FC = () => {
               {isRunning ? 'MISSION RUNNING' : 'START MISSION'}
             </button>
             <div className="grid grid-cols-2 gap-2">
-              <button className="bg-white border border-slate-200 text-slate-400 py-2 rounded-lg font-bold text-[10px] cursor-not-allowed uppercase tracking-widest">
-                Emergency Stop
+              <button
+                onClick={handleCancelMission}
+                className="bg-red-50 border border-red-500 text-red-500 py-2 rounded-lg font-bold text-[10px] hover:bg-red-100 uppercase tracking-widest transition"
+              >
+                Cancel Mission
               </button>
               <button
                 onClick={handleLand}
-                className="bg-white border border-slate-200 text-red-500 py-2 rounded-lg font-bold text-[10px] hover:bg-slate-50 uppercase tracking-widest"
+                className="bg-slate-100 border border-slate-300 text-slate-600 py-2 rounded-lg font-bold text-[10px] hover:bg-slate-200 uppercase tracking-widest transition"
               >
-                Cancel Mission
+                Auto Land
               </button>
             </div>
           </div>
@@ -220,7 +247,7 @@ const MissionPlannerInner: React.FC = () => {
               </div>
             </button>
           </div>
-          <button 
+          <button
             className="text-slate-400 hover:text-blue-500"
             onClick={() => setIsSettingsOpen(true)}
           >
@@ -239,9 +266,8 @@ const MissionPlannerInner: React.FC = () => {
           </button>
           <button
             onClick={toggleMissionMode}
-            className={`text-[11px] font-bold flex flex-col items-center gap-1 transition uppercase tracking-widest ${
-              missionMode ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'
-            }`}
+            className={`text-[11px] font-bold flex flex-col items-center gap-1 transition uppercase tracking-widest ${missionMode ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'
+              }`}
           >
             <Target className="w-4 h-4" />
             Mission
@@ -400,9 +426,9 @@ const MissionPlannerInner: React.FC = () => {
       )}
 
       {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
     </div>
   );

@@ -14,6 +14,7 @@ const defaultRosContext: RosContextType = {
   homePosition: null,
   startMission: async () => ({ success: false, message: 'Not connected' }),
   landDrone: () => {},
+  cancelMission: () => {},
   rosIp: 'localhost:9090',
   setRosIp: () => {},
 };
@@ -92,7 +93,16 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
       if (msg.latitude && msg.longitude) {
         setGpsData({ latitude: msg.latitude, longitude: msg.longitude, status: msg.status?.status ?? -1 });
         updateHealth('gps', (msg.status?.status ?? -1) >= 0);
-        setHomePosition(prev => prev || { lat: msg.latitude, lng: msg.longitude });
+      }
+    });
+
+    // Home Position subscriber -> ใช้สำหรับเป็น Origin ในการแปลงพิกัด
+    const homeSub = new ROSLIB.Topic({
+      ros, name: '/mavros/home_position/home', messageType: 'mavros_msgs/msg/HomePosition',
+    });
+    homeSub.subscribe((msg: any) => {
+      if (msg.geo && msg.geo.latitude && msg.geo.longitude) {
+        setHomePosition({ lat: msg.geo.latitude, lng: msg.geo.longitude });
       }
     });
 
@@ -133,6 +143,7 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     return () => {
       stateSub.unsubscribe();
       gpsSub.unsubscribe();
+      homeSub.unsubscribe();
       altSub.unsubscribe();
       vfrSub.unsubscribe();
       batSub.unsubscribe();
@@ -165,6 +176,16 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     });
   }, []);
 
+  const cancelMission = useCallback(() => {
+    if (!rosRef.current) return;
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mavros/set_mode', serviceType: 'mavros_msgs/srv/SetMode',
+    });
+    client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.LOITER' }), (res: any) => {
+      console.log('Cancel Mission (Loiter) Command Sent', res);
+    });
+  }, []);
+
   const value: RosContextType = {
     connectionStatus,
     droneState,
@@ -177,6 +198,7 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     homePosition,
     startMission,
     landDrone,
+    cancelMission,
     rosIp,
     setRosIp,
   };

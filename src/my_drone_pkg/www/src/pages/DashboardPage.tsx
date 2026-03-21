@@ -12,7 +12,7 @@ import { MapProvider } from '@/contexts/MapContext';
 const DashboardPage: React.FC = () => {
   const {
     connectionStatus, droneState, gpsData, altitude, speed, battery,
-    homePosition, startMission, landDrone,
+    homePosition, startMission, landDrone, cancelMission,
   } = useRos();
   const { waypoints, missionStatus, missionStatusClass, setMissionStatus } = useMission();
 
@@ -70,9 +70,14 @@ const DashboardPage: React.FC = () => {
   }, [startMission, setMissionStatus]);
 
   const handleLand = useCallback(() => {
-    setMissionStatus('CANCELLING...', 'text-orange-500');
+    setMissionStatus('LANDING...', 'text-orange-500');
     landDrone();
   }, [landDrone, setMissionStatus]);
+
+  const handleCancelMission = useCallback(() => {
+    setMissionStatus('CANCELLING...', 'text-orange-500');
+    cancelMission();
+  }, [cancelMission, setMissionStatus]);
 
   const connLabel =
     connectionStatus === 'connected' ? 'Online' :
@@ -215,16 +220,16 @@ const DashboardPage: React.FC = () => {
                   {isRunning ? 'MISSION RUNNING' : 'START MISSION'}
                 </button>
                 <button
-                  onClick={handleLand}
-                  className="w-full bg-red-500 text-white py-3 rounded-xl font-bold text-xs hover:bg-red-600 transition shadow-lg shadow-red-200 uppercase tracking-widest"
+                  onClick={handleCancelMission}
+                  className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-bold text-xs hover:bg-red-100 transition uppercase tracking-widest"
                 >
-                  Emergency Stop
+                  Cancel Mission
                 </button>
                 <button
                   onClick={handleLand}
                   className="w-full bg-slate-100 text-slate-600 py-3 rounded-xl font-bold text-xs hover:bg-slate-200 transition uppercase tracking-widest"
                 >
-                  Return to Land
+                  Auto Land
                 </button>
               </div>
             </div>
