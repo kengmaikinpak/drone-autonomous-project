@@ -7,6 +7,10 @@ from mavros_msgs.msg import State # สถานะของโดรน
 from mavros_msgs.srv import CommandBool, SetMode # บริการสั่ง arm และ Set Mode
 from geometry_msgs.msg import PoseStamped, PoseArray # ข้อมูลตำแหน่ง
 from std_srvs.srv import Trigger # Service สำหรับ Trigger
+from std_msgs.msg import String
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+import json
 
 import numpy as np
 
@@ -27,6 +31,17 @@ class OffboardControl(Node):
         # สร้าง Service Server สำหรับสั่งเริ่มภารกิจ
         self.srv_start_mission = self.create_service(Trigger, '/mission/start', self.start_mission_callback)
         self.mission_started = False
+        
+        # สร้าง Service Server สำหรับยืนยันการไป Waypoint แรก
+        self.srv_confirm_waypoint = self.create_service(Trigger, '/mission/confirm_waypoint', self.confirm_waypoint_callback)
+        self.mission_confirmed = False
+        
+        # Subscriber สำหรับรับ Settings จาก UI
+        self.settings_sub = self.create_subscription(String, '/mission/settings', self.settings_callback, 10)
+        self.param_set_client = self.create_client(SetParameters, '/mavros/param/set_parameters')
+        self.takeoff_alt = 3.0
+        self.hover_time = 5.0
+        self.cruise_speed = 5.0
         
         # Subscriber สำหรับรับ waypoints จาก Web UI
         self.waypoints_sub = self.create_subscription(
@@ -140,7 +155,73 @@ class OffboardControl(Node):
         response.success = True
         response.message = "Mission Started"
         return response
+
+    def confirm_waypoint_callback(self, request, response):
+        """
+        Callback เมื่อเรียก Service /mission/confirm_waypoint
+        """
+        self.mission_confirmed = True
+        self.get_logger().info("Mission Confirmed! Proceeding to waypoints.")
+        response.success = True
+        response.message = "Mission Confirmed"
+        return response
     
+    def set_px4_param(self, param_id, value, is_integer=False):
+        req = SetParameters.Request()
+        param = Parameter()
+        param.name = param_id
+        param.value = ParameterValue()
+        if is_integer:
+            param.value.type = ParameterType.PARAMETER_INTEGER
+            param.value.integer_value = int(value)
+        else:
+            param.value.type = ParameterType.PARAMETER_DOUBLE
+            param.value.double_value = float(value)
+            
+        req.parameters = [param]
+        
+        future = self.param_set_client.call_async(req)
+        # ไม่ต้องรอตอบกลับแบบ block ให้มันทำไปในพื้นหลัง
+        future.add_done_callback(lambda fut, pid=param_id: self.param_response_callback(fut, pid))
+
+    def param_response_callback(self, future, param_id):
+        try:
+            res = future.result()
+            if res.results[0].successful:
+                self.get_logger().info(f"ParamSet success: {param_id}")
+            else:
+                self.get_logger().error(f"ParamSet failed for {param_id}: {res.results[0].reason}")
+        except Exception as e:
+            self.get_logger().error(f"ParamSet call failed: {e}")
+
+    def settings_callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            changed = False
+            
+            if 'takeoffAltitude' in data:
+                self.takeoff_alt = float(data['takeoffAltitude'])
+                changed = True
+            if 'hoverTime' in data:
+                self.hover_time = float(data['hoverTime'])
+                changed = True
+            
+            # Update PX4 Params
+            if 'cruiseSpeed' in data:
+                self.cruise_speed = float(data['cruiseSpeed'])
+                self.set_px4_param('MPC_XY_CRUISE', self.cruise_speed, is_integer=False)
+                self.set_px4_param('MPC_XY_VEL_MAX', self.cruise_speed, is_integer=False)
+            if 'maxAltitude' in data:
+                self.set_px4_param('GF_MAX_VER_DIST', float(data['maxAltitude']), is_integer=False)
+            if 'rtlAltitude' in data:
+                self.set_px4_param('RTL_RETURN_ALT', float(data['rtlAltitude']), is_integer=False)
+
+            if changed:
+                self.get_logger().info(f"Internal Mission Settings Updated: TakeoffAlt={self.takeoff_alt}, HoverTime={self.hover_time}")
+                
+        except Exception as e:
+            self.get_logger().error(f"Failed to parse /mission/settings: {e}")
+            
     def waypoints_callback(self, msg):
         """
         Callback เมื่อได้รับ waypoints จาก Web UI
@@ -232,7 +313,51 @@ class OffboardControl(Node):
                 rclpy.spin_once(self, timeout_sec=0.1)
                 
             # ---------------------------------------
-            # Mission Logic
+            # 1. Takeoff Phase (บินขึ้นแนวดิ่ง)
+            # ---------------------------------------
+            takeoff_altitude = self.takeoff_alt  # ความสูงตอน Takeoff
+            self.get_logger().info(f"Taking off to {takeoff_altitude}m...")
+            
+            # รักษตำแหน่ง X, Y ของตำแหน่งปัจจุบัน แต่เปลี่ยน Z
+            self.target_pose.pose.position.x = self.current_pose.pose.position.x
+            self.target_pose.pose.position.y = self.current_pose.pose.position.y
+            self.target_pose.pose.position.z = takeoff_altitude
+            
+            while rclpy.ok():
+                if self.current_state.mode != "OFFBOARD" or not self.current_state.armed:
+                    break
+                
+                self.target_pose.header.stamp = self.get_clock().now().to_msg()
+                self.pose_pub.publish(self.target_pose)
+                
+                # ตรวจสอบว่าถึงความสูง Takeoff หรือยัง (Tolerance 0.2m)
+                if abs(self.current_pose.pose.position.z - takeoff_altitude) < 0.2:
+                    self.get_logger().info("Takeoff Complete! Waiting for confirmation to proceed to waypoints...")
+                    break
+                
+                rclpy.spin_once(self, timeout_sec=0.1)
+
+            # รอการ Confirm จาก React UI
+            self.mission_confirmed = False
+            self.get_logger().info("Waiting for 'Go to Waypoint' confirmation...")
+            while rclpy.ok() and not self.mission_confirmed:
+                if self.current_state.mode != "OFFBOARD" or not self.current_state.armed:
+                    break
+                    
+                self.target_pose.header.stamp = self.get_clock().now().to_msg()
+                self.pose_pub.publish(self.target_pose)
+                rclpy.spin_once(self, timeout_sec=0.1)
+
+            # ถ้ายกเลิกภารกิจตอนรอ Confirm
+            if self.current_state.mode != "OFFBOARD" or not self.current_state.armed:
+                self.get_logger().info("Mission aborted before confirmation.")
+                self.mission_started = False
+                continue
+
+            self.get_logger().info("Confirmation received! Proceeding to mission logic.")
+                
+            # ---------------------------------------
+            # 2. Mission Logic
             # ---------------------------------------
             
             # กำหนดลำดับ Waypoints
@@ -319,8 +444,8 @@ class OffboardControl(Node):
                     break
                     
                 # ถ้าเป็นภารกิจหมุนตัว (Yaw) ให้รอนานหน่อย (5 วิ)
-                # ถ้าเป็นภารกิจบิน ธรรมดา รอ 3 วิ
-                hover_duration = 5.0 if yaw != 0.0 and idx == 7 else 3.0
+                # ถ้าเป็นภารกิจบิน ธรรมดา รอตาม hover_time
+                hover_duration = 5.0 if yaw != 0.0 and idx == 7 else self.hover_time
                     
                 self.get_logger().info(f"Hovering at Waypoint {idx+1}: ({x}, {y}, {z}, {yaw}) for {hover_duration} seconds...")
                 hover_start_time = self.get_clock().now()

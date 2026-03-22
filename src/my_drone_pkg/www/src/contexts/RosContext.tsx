@@ -14,9 +14,11 @@ const defaultRosContext: RosContextType = {
   healthStatus: { gps: false, wifi: false, arm: false, gcs: false, fcu: false },
   homePosition: null,
   startMission: async () => ({ success: false, message: 'Not connected' }),
+  confirmWaypoint: async () => ({ success: false, message: 'Not connected' }),
   landDrone: async () => false,
   cancelMission: async () => false,
   returnToHome: async () => false,
+  sendSettingsToROS: () => {},
   rosIp: 'localhost:9090',
   setRosIp: () => {},
 };
@@ -197,6 +199,20 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     });
   }, []);
 
+  const confirmWaypoint = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+    if (!rosRef.current) return { success: false, message: 'Not connected' };
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mission/confirm_waypoint', serviceType: 'std_srvs/Trigger',
+    });
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({}), (result: any) => {
+        resolve({ success: result.success, message: result.message || '' });
+      }, (err: string) => {
+        resolve({ success: false, message: err });
+      });
+    });
+  }, []);
+
   const landDrone = useCallback(async (): Promise<boolean> => {
     if (!rosRef.current) return false;
     const client = new ROSLIB.Service({
@@ -245,6 +261,19 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     });
   }, []);
 
+  const sendSettingsToROS = useCallback((settings: any) => {
+    if (!rosRef.current || connectionStatus !== 'connected') return;
+    const topic = new ROSLIB.Topic({
+      ros: rosRef.current,
+      name: '/mission/settings',
+      messageType: 'std_msgs/msg/String'
+    });
+    
+    topic.publish(new ROSLIB.Message({
+      data: JSON.stringify(settings)
+    }));
+  }, [connectionStatus]);
+
   const value: RosContextType = {
     connectionStatus,
     droneState,
@@ -257,9 +286,11 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     healthStatus,
     homePosition,
     startMission,
+    confirmWaypoint,
     landDrone,
     cancelMission,
     returnToHome,
+    sendSettingsToROS,
     rosIp,
     setRosIp,
   };

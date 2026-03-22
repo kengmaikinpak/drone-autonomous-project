@@ -41,9 +41,11 @@ export interface RosContextType {
   healthStatus: HealthStatus;
   homePosition: { lat: number; lng: number } | null;
   startMission: () => Promise<{ success: boolean; message: string }>;
+  confirmWaypoint: () => Promise<{ success: boolean; message: string }>;
   landDrone: () => Promise<boolean>;
   cancelMission: () => Promise<boolean>;
   returnToHome: () => Promise<boolean>;
+  sendSettingsToROS: (settings: any) => void;
   rosIp: string;
   setRosIp: (ip: string) => void;
 }
@@ -65,4 +67,20 @@ export interface MissionContextType {
 export interface MapContextType {
   map: L.Map | null;
   setMap: (map: L.Map | null) => void;
+}
+
+export interface DroneSettings {
+  mavlinkSystemId: number;
+  maxAltitude: number;
+  rtlAltitude: number;
+  lowBatteryThreshold: number;
+  rcLossAction: 'RTL' | 'Loiter' | 'Land';
+  takeoffAltitude: number;
+  cruiseSpeed: number;
+  hoverTime: number;
+}
+
+export interface SettingsContextType {
+  settings: DroneSettings;
+  updateSettings: (newSettings: Partial<DroneSettings>) => void;
 }

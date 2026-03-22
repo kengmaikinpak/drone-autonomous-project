@@ -8,22 +8,25 @@ import { useMission } from '@/contexts/MissionContext';
 import DroneMap from '@/components/DroneMap';
 import HealthIndicators from '@/components/HealthIndicators';
 import { MapProvider } from '@/contexts/MapContext';
+import { useSettings } from '@/contexts/SettingsContext';
 import SlideConfirmModal from '@/components/SlideConfirmModal';
 
-type ActionType = 'START' | 'CANCEL' | 'LAND' | null;
+type ActionType = 'START' | 'CANCEL' | 'LAND' | 'CONFIRM_WAYPOINT' | null;
 
 const actionDetails = {
   START: { title: 'START MISSION', desc: 'Send waypoints and begin offboard flight.' },
   CANCEL: { title: 'CANCEL MISSION', desc: 'Stop the drone immediately and loiter.' },
   LAND: { title: 'AUTO LAND', desc: 'Command the drone to land at its current position.' },
+  CONFIRM_WAYPOINT: { title: 'GO TO WAYPOINT', desc: 'Confirm to proceed to the first waypoint.' },
 };
 
 const DashboardPage: React.FC = () => {
   const {
     connectionStatus, droneState, gpsData, altitude, speed, battery,
-    homePosition, startMission, landDrone, cancelMission, flightTime,
+    homePosition, startMission, confirmWaypoint, landDrone, cancelMission, flightTime, sendSettingsToROS
   } = useRos();
   const { waypoints, missionStatus, missionStatusClass, setMissionStatus } = useMission();
+  const { settings } = useSettings();
 
   const [isRunning, setIsRunning] = useState(false);
   const [hasArmed, setHasArmed] = useState(false);
@@ -40,10 +43,19 @@ const DashboardPage: React.FC = () => {
 
     if (action === 'START') {
       setMissionStatus('SENDING...', 'text-orange-500');
+      sendSettingsToROS(settings);
       const result = await startMission();
       if (result.success) {
         setIsRunning(true);
-        setMissionStatus('STARTED', 'text-green-500');
+        setMissionStatus('TAKING OFF...', 'text-orange-500');
+      } else {
+        setMissionStatus('FAILED', 'text-red-500');
+      }
+    } else if (action === 'CONFIRM_WAYPOINT') {
+      setMissionStatus('CONFIRMING...', 'text-orange-500');
+      const result = await confirmWaypoint();
+      if (result.success) {
+        setMissionStatus('MISSION RUNNING', 'text-green-500');
       } else {
         setMissionStatus('FAILED', 'text-red-500');
       }
@@ -61,7 +73,13 @@ const DashboardPage: React.FC = () => {
         setMissionStatus('IDLE', 'text-blue-500');
       }
     }
-  }, [pendingAction, startMission, landDrone, cancelMission, setMissionStatus]);
+  }, [pendingAction, startMission, confirmWaypoint, landDrone, cancelMission, setMissionStatus]);
+
+  useEffect(() => {
+    if (missionStatus === 'TAKING OFF...' && altitude >= settings.takeoffAltitude - 0.2) {
+      setMissionStatus('WAITING CONFIRM', 'text-orange-500');
+    }
+  }, [altitude, missionStatus, setMissionStatus, settings.takeoffAltitude]);
 
   const connLabel =
     connectionStatus === 'connected' ? 'Online' :
@@ -196,13 +214,22 @@ const DashboardPage: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <button
-                  onClick={handleStartMission}
-                  disabled={connectionStatus !== 'connected' || isRunning}
-                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-200 uppercase tracking-widest disabled:bg-slate-300 disabled:shadow-none"
-                >
-                  {isRunning ? 'MISSION RUNNING' : 'START MISSION'}
-                </button>
+                {missionStatus === 'WAITING CONFIRM' ? (
+                  <button
+                    onClick={() => setPendingAction('CONFIRM_WAYPOINT')}
+                    className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold text-xs hover:bg-orange-600 transition shadow-lg shadow-orange-200 uppercase tracking-widest"
+                  >
+                    GO TO WAYPOINT
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStartMission}
+                    disabled={connectionStatus !== 'connected' || isRunning}
+                    className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-200 uppercase tracking-widest disabled:bg-slate-300 disabled:shadow-none"
+                  >
+                    {missionStatus === 'TAKING OFF...' ? 'TAKING OFF...' : (isRunning ? 'MISSION RUNNING' : 'START MISSION')}
+                  </button>
+                )}
                 <button
                   onClick={handleCancelMission}
                   className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-bold text-xs hover:bg-red-100 transition uppercase tracking-widest"

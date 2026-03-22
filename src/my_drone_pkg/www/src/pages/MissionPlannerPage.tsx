@@ -9,28 +9,32 @@ import DroneMap from '@/components/DroneMap';
 import HealthIndicators from '@/components/HealthIndicators';
 import SettingsModal from '@/components/SettingsModal';
 import { MapProvider, useMap } from '@/contexts/MapContext';
+import { useSettings } from '@/contexts/SettingsContext';
 import SlideConfirmModal from '@/components/SlideConfirmModal';
+import MissionCompleteModal from '@/components/MissionCompleteModal';
 
-type ActionType = 'START' | 'CANCEL' | 'LAND' | 'RTL' | null;
+type ActionType = 'START' | 'CANCEL' | 'LAND' | 'RTL' | 'CONFIRM_WAYPOINT' | null;
 
 const actionDetails = {
   START: { title: 'START MISSION', desc: 'Send waypoints and begin offboard flight.' },
   CANCEL: { title: 'CANCEL MISSION', desc: 'Stop the drone immediately and loiter.' },
   LAND: { title: 'AUTO LAND', desc: 'Command the drone to land at its current position.' },
   RTL: { title: 'RTL', desc: 'Return to the home position of the vehicle.' },
+  CONFIRM_WAYPOINT: { title: 'GO TO WAYPOINT', desc: 'Confirm to proceed to the first waypoint.' },
 };
 
 // Inner component that uses MapContext
 const MissionPlannerInner: React.FC = () => {
   const {
     connectionStatus, droneState, gpsData, altitude, speed, battery,
-    homePosition, startMission, landDrone, cancelMission, returnToHome, flightTime,
+    homePosition, startMission, confirmWaypoint, landDrone, cancelMission, returnToHome, flightTime, sendSettingsToROS
   } = useRos();
   const {
     waypoints, missionStatus, missionStatusClass, addWaypoint, removeWaypoint,
     clearWaypoints, updateWaypointAlt, sendMissionToROS, setMissionStatus,
     defaultAltitude, setDefaultAltitude,
   } = useMission();
+  const { settings } = useSettings();
   const { map } = useMap();
 
   const [missionMode, setMissionMode] = useState(false);
@@ -97,10 +101,19 @@ const MissionPlannerInner: React.FC = () => {
 
     if (action === 'START') {
       setMissionStatus('SENDING...', 'text-orange-500');
+      sendSettingsToROS(settings);
       const result = await startMission();
       if (result.success) {
         setIsRunning(true);
-        setMissionStatus('STARTED', 'text-green-500');
+        setMissionStatus('TAKING OFF...', 'text-orange-500');
+      } else {
+        setMissionStatus('FAILED', 'text-red-500');
+      }
+    } else if (action === 'CONFIRM_WAYPOINT') {
+      setMissionStatus('CONFIRMING...', 'text-orange-500');
+      const result = await confirmWaypoint();
+      if (result.success) {
+        setMissionStatus('MISSION RUNNING', 'text-green-500');
       } else {
         setMissionStatus('FAILED', 'text-red-500');
       }
@@ -122,7 +135,13 @@ const MissionPlannerInner: React.FC = () => {
       const success = await returnToHome();
       if (!success) setMissionStatus('IDLE', 'text-blue-500');
     }
-  }, [pendingAction, startMission, landDrone, cancelMission, returnToHome, setMissionStatus]);
+  }, [pendingAction, startMission, confirmWaypoint, landDrone, cancelMission, returnToHome, setMissionStatus]);
+
+  useEffect(() => {
+    if (missionStatus === 'TAKING OFF...' && altitude >= settings.takeoffAltitude - 0.2) {
+      setMissionStatus('WAITING CONFIRM', 'text-orange-500');
+    }
+  }, [altitude, missionStatus, setMissionStatus, settings.takeoffAltitude]);
 
   const centerMapOnDrone = useCallback(() => {
     if (map && gpsData.latitude && gpsData.longitude) {
@@ -215,13 +234,22 @@ const MissionPlannerInner: React.FC = () => {
 
           {/* Controls */}
           <div className="pt-4 space-y-2">
-            <button
-              onClick={handleStartMission}
-              disabled={connectionStatus !== 'connected' || isRunning}
-              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-200 uppercase tracking-widest disabled:bg-slate-300 disabled:shadow-none"
-            >
-              {isRunning ? 'MISSION RUNNING' : 'START MISSION'}
-            </button>
+            {missionStatus === 'WAITING CONFIRM' ? (
+              <button
+                onClick={() => setPendingAction('CONFIRM_WAYPOINT')}
+                className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold text-xs hover:bg-orange-600 transition shadow-lg shadow-orange-200 uppercase tracking-widest"
+              >
+                GO TO WAYPOINT
+              </button>
+            ) : (
+              <button
+                onClick={handleStartMission}
+                disabled={connectionStatus !== 'connected' || isRunning}
+                className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-200 uppercase tracking-widest disabled:bg-slate-300 disabled:shadow-none"
+              >
+                {missionStatus === 'TAKING OFF...' ? 'TAKING OFF...' : (isRunning ? 'MISSION RUNNING' : 'START MISSION')}
+              </button>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handleCancelMission}
@@ -417,45 +445,10 @@ const MissionPlannerInner: React.FC = () => {
       </main>
 
       {/* Mission Complete Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden border border-slate-200">
-            <div className="p-4 bg-blue-600 text-white flex justify-between items-center">
-              <h2 className="font-bold text-lg tracking-wider">Flight Plan complete</h2>
-              <button onClick={() => setShowModal(false)} className="hover:bg-white/20 p-1 rounded transition">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 flex flex-col gap-3">
-              <button
-                onClick={() => { clearWaypoints(); setShowModal(false); }}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-lg font-bold text-sm transition border border-slate-300 shadow-sm"
-              >
-                Remove plan from vehicle
-              </button>
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-lg font-bold text-sm transition border border-slate-300 shadow-sm"
-              >
-                Leave plan on vehicle
-              </button>
-              <hr className="my-3 border-slate-200" />
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 py-3 rounded-lg font-bold text-sm transition shadow-sm"
-              >
-                Resume Mission From Waypoint 1
-              </button>
-              <p className="text-[11px] text-slate-500 mt-2 leading-relaxed font-medium">
-                Resume Mission will rebuild the current mission from the last flown waypoint and upload it to the vehicle for the next flight.
-              </p>
-              <p className="text-[11px] text-red-500 font-bold mt-1">
-                If you are changing batteries for Resume Mission do not disconnect from the vehicle.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <MissionCompleteModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+      />
 
       {/* Settings Modal */}
       <SettingsModal
