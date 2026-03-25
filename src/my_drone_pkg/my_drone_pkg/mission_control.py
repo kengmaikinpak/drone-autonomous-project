@@ -65,6 +65,7 @@ class OffboardControl(Node):
         self.custom_waypoints = []
         self.current_wp_idx = 0
         self.mission_origin = (0.0, 0.0)
+        self.takeoff_setpoint_z = 0.0
         
         self.last_request_time = self.get_clock().now()
         self.state_start_time = self.get_clock().now()
@@ -111,8 +112,7 @@ class OffboardControl(Node):
                 self.set_px4_param('MPC_XY_VEL_MAX', self.cruise_speed)
             if 'autoRtl' in data: 
                 self.auto_rtl = bool(data['autoRtl'])
-            self.get_logger().info(f"Settings synced: Alt={self.takeoff_alt}, Speed={self.cruise_speed}, AutoRTL={self.0
-            }")
+            self.get_logger().info(f"Settings synced: Alt={self.takeoff_alt}, Speed={self.cruise_speed}, AutoRTL={self.auto_rtl}")
         except Exception as e:
             self.get_logger().error(f"Settings error: {e}")
 
@@ -187,10 +187,28 @@ class OffboardControl(Node):
                 
                 if self.current_state.mode == "OFFBOARD" and self.current_state.armed:
                     self.mission_state = self.STATE_TAKEOFF
-                    self.target_pose.pose.position.z = self.takeoff_alt
+                    self.takeoff_setpoint_z = self.current_pose.pose.position.z # Start ramping from current height
+                    self.target_pose.pose.position.z = self.takeoff_setpoint_z
 
         elif self.mission_state == self.STATE_TAKEOFF:
-            if self.is_at_target(z_tol=0.2):
+            # Smoothly increment vertical setpoint (Ramping)
+            # 0.5 m/s target climb rate (at 20Hz = 0.025m per tick)
+            CLIMB_RATE_MS = 0.5 
+            Z_STEP = CLIMB_RATE_MS * 0.05
+            
+            if self.takeoff_setpoint_z < self.takeoff_alt:
+                self.takeoff_setpoint_z += Z_STEP
+                if self.takeoff_setpoint_z > self.takeoff_alt:
+                    self.takeoff_setpoint_z = self.takeoff_alt
+            
+            self.target_pose.pose.position.z = self.takeoff_setpoint_z
+
+            # Safety check: prevent overshoot by ensuring setpoint NEVER exceeds target
+            if self.target_pose.pose.position.z > self.takeoff_alt:
+                self.target_pose.pose.position.z = self.takeoff_alt
+                
+            # Transition only when reached target AND ramping is complete
+            if self.is_at_target(z_tol=0.2) and self.takeoff_setpoint_z >= self.takeoff_alt:
                 self.mission_state = self.STATE_WAIT_CONFIRM
                 self.mission_confirmed = False
 
