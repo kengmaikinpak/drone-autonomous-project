@@ -6,8 +6,12 @@ services:
         privileged: true # เพื่อให้คุยกับ USB/Serial ได้
         devices:
             - /dev/ttyACM0:/dev/ttyACM0
+            - /dev/ttyAMA0:/dev/ttyAMA0
         volumes:
             - ./src:/ros2_ws/src
             - ./www:/ros2_ws/www
+            - ./install:/ros2_ws/install
+            - ./build:/ros2_ws/build
+            - ./log:/ros2_ws/log
         tty: true
         stdin_open: true

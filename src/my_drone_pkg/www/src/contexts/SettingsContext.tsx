@@ -10,6 +10,7 @@ const defaultSettings: DroneSettings = {
   takeoffAltitude: 3.0,
   cruiseSpeed: 5,
   hoverTime: 5,
+  autoRtl: false,
 };
 
 const SettingsContext = createContext<SettingsContextType>({

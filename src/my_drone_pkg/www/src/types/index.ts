@@ -78,6 +78,7 @@ export interface DroneSettings {
   takeoffAltitude: number;
   cruiseSpeed: number;
   hoverTime: number;
+  autoRtl: boolean;
 }
 
 export interface SettingsContextType {
