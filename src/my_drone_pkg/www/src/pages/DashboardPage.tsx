@@ -83,12 +83,12 @@ const DashboardPage: React.FC = () => {
 
   const connLabel =
     connectionStatus === 'connected' ? 'Online' :
-    connectionStatus === 'error' ? 'Error' :
-    connectionStatus === 'closed' ? 'Offline' : 'Connecting...';
+      connectionStatus === 'error' ? 'Error' :
+        connectionStatus === 'closed' ? 'Offline' : 'Connecting...';
 
   const connColor =
     connectionStatus === 'connected' ? 'text-green-500' :
-    connectionStatus === 'error' ? 'text-red-500' : 'text-slate-400';
+      connectionStatus === 'error' ? 'text-red-500' : 'text-slate-400';
 
   return (
     <MapProvider>
@@ -114,11 +114,11 @@ const DashboardPage: React.FC = () => {
               </div>
               <div>
                 <div className="text-xl font-bold text-slate-800 font-mono tracking-tight">
-                  {gpsData.latitude.toFixed(4)}, {gpsData.longitude.toFixed(4)}
+                  {gpsData.latitude.toFixed(4)}, {gpsData.longitude.toFixed(4)}, {altitude.toFixed(1)}
                 </div>
                 <div className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                  Precision: {altitude.toFixed(1)} m (Alt)
+                  Latitude, Longitude, Altitude
                 </div>
               </div>
             </div>
@@ -186,9 +186,8 @@ const DashboardPage: React.FC = () => {
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl">
                   <div className="text-[10px] font-bold text-slate-400 uppercase">Mode</div>
-                  <div className={`font-bold uppercase ${
-                    droneState.mode === 'OFFBOARD' ? 'text-green-500' : 'text-blue-500'
-                  }`}>
+                  <div className={`font-bold uppercase ${droneState.mode === 'OFFBOARD' ? 'text-green-500' : 'text-blue-500'
+                    }`}>
                     {droneState.mode}
                   </div>
                 </div>
@@ -314,14 +313,12 @@ const DashboardPage: React.FC = () => {
                     {waypoints.map((wp, i) => (
                       <div
                         key={i}
-                        className={`flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:border-blue-200 transition group cursor-pointer ${
-                          i === 0 ? 'bg-slate-50' : 'bg-white'
-                        }`}
+                        className={`flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:border-blue-200 transition group cursor-pointer ${i === 0 ? 'bg-slate-50' : 'bg-white'
+                          }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                            i === 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
-                          }`}>
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${i === 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
+                            }`}>
                             {i + 1}
                           </div>
                           <div className="flex flex-col">
