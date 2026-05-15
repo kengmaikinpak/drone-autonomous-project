@@ -29,6 +29,7 @@ setup(
     entry_points={
         'console_scripts': [
             "mission_control = my_drone_pkg.mission_control:main",
+            "test_actuator = my_drone_pkg.test_actuator:main",
         ],
     },
 )

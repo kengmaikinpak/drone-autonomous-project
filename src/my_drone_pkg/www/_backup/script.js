@@ -43,7 +43,7 @@ const missionStatus = document.getElementById('mission-status');
 ros.on('connection', () => {
     connIndicator.innerHTML = '<span class="text-[9px] font-bold text-green-500 uppercase">Online</span><div class="w-2 h-2 rounded-full bg-green-500"></div>';
     updateHealthStatus('health-fcu', true);
-    startBtn.disabled = false; // Enable button on connection
+    if (startBtn) startBtn.disabled = false; // Enable button on connection
     // Simulate Wifi/CPU health
     setTimeout(() => {
         updateHealthStatus('health-wifi', true);
@@ -54,13 +54,13 @@ ros.on('connection', () => {
 ros.on('error', () => {
     connIndicator.innerHTML = '<span class="text-[9px] font-bold text-red-500 uppercase">Error</span><div class="w-2 h-2 rounded-full bg-red-500"></div>';
     updateHealthStatus('health-fcu', false);
-    startBtn.disabled = true;
+    if (startBtn) startBtn.disabled = true;
 });
 
 ros.on('close', () => {
     connIndicator.innerHTML = '<span class="text-[9px] font-bold text-slate-400 uppercase">Offline</span><div class="w-2 h-2 rounded-full bg-slate-400"></div>';
     updateHealthStatus('health-fcu', false);
-    startBtn.disabled = true;
+    if (startBtn) startBtn.disabled = true;
 });
 
 // Subscribers
@@ -86,18 +86,21 @@ stateSub.subscribe((msg) => {
     // Reset Mission Button if drone disarms (Mission Finished)
     // Only reset if it has armed at least once (prevent immediate reset on start)
     if (msg.armed) {
-        startBtn.dataset.hasArmed = 'true';
+        if (startBtn) startBtn.dataset.hasArmed = 'true';
     }
 
-    if (!msg.armed && startBtn.disabled) {
+    if (!msg.armed && startBtn && startBtn.disabled) {
         // If we were tracking an active mission (hasArmed=true)
         if (startBtn.dataset.hasArmed === 'true') {
             startBtn.disabled = false;
             startBtn.innerText = 'START MISSION';
-            missionStatus.innerText = 'READY';
-            missionStatus.className = 'text-slate-500 font-bold';
+            if (missionStatus) {
+                missionStatus.innerText = 'READY';
+                missionStatus.className = 'text-slate-500 font-bold';
+            }
             console.log('Mission finished (Disarmed), button reset.');
             startBtn.dataset.hasArmed = 'false'; // Reset state
+            showMissionCompleteModal(); // Show modal when mission finishes
         }
     }
 });
@@ -106,6 +109,8 @@ const globalPosSub = new ROSLIB.Topic({
     ros: ros, name: '/mavros/global_position/global', messageType: 'sensor_msgs/msg/NavSatFix'
 });
 
+let homePosition = null; // Store first GPS fix as home
+
 globalPosSub.subscribe((msg) => {
     if (msg.latitude && msg.longitude) {
         const lat = msg.latitude.toFixed(6);
@@ -113,6 +118,14 @@ globalPosSub.subscribe((msg) => {
         document.getElementById('val-coords').innerText = `${lat}, ${lon}`;
         droneMarker.setLatLng([msg.latitude, msg.longitude]);
         map.panTo([msg.latitude, msg.longitude]); // Follow drone
+
+        // Store home position on first fix
+        if (!homePosition) {
+            homePosition = { lat: msg.latitude, lng: msg.longitude };
+            console.log("Home position set to:", homePosition);
+        }
+
+        updateWaypointLines(); // Redraw lines to start from current drone location
 
         // Simple GPS status check (if we have fix)
         updateHealthStatus('health-gps', msg.status.status >= 0);
@@ -174,31 +187,39 @@ const missionClient = new ROSLIB.Service({
     serviceType: 'std_srvs/Trigger'
 });
 
-startBtn.addEventListener('click', () => {
-    startBtn.dataset.hasArmed = 'false'; // Reset armed state tracking
-    missionStatus.innerText = 'SENDING...';
-    const req = new ROSLIB.ServiceRequest({});
+if (startBtn) {
+    startBtn.addEventListener('click', () => {
+        startBtn.dataset.hasArmed = 'false'; // Reset armed state tracking
+        if (missionStatus) missionStatus.innerText = 'SENDING...';
+        const req = new ROSLIB.ServiceRequest({});
 
-    missionClient.callService(req, (result) => {
-        if (result.success) {
-            console.log('Mission Triggered');
-            missionStatus.innerText = 'STARTED';
-            missionStatus.className = 'text-green-500 font-bold';
-            startBtn.innerText = 'MISSION RUNNING';
-            startBtn.disabled = true;
-        } else {
-            console.error('Mission Failed');
-            missionStatus.innerText = 'FAILED';
-            missionStatus.className = 'text-red-500 font-bold';
-        }
-    }, (err) => {
-        console.error('Service Call Error:', err);
-        missionStatus.innerText = 'ERROR (Check Console)';
-        missionStatus.className = 'text-red-500 font-bold';
-        startBtn.disabled = false; // Re-enable button on error
-        startBtn.innerText = 'START MISSION';
+        missionClient.callService(req, (result) => {
+            if (result.success) {
+                console.log('Mission Triggered');
+                if (missionStatus) {
+                    missionStatus.innerText = 'STARTED';
+                    missionStatus.className = 'text-green-500 font-bold';
+                }
+                startBtn.innerText = 'MISSION RUNNING';
+                startBtn.disabled = true;
+            } else {
+                console.error('Mission Failed');
+                if (missionStatus) {
+                    missionStatus.innerText = 'FAILED';
+                    missionStatus.className = 'text-red-500 font-bold';
+                }
+            }
+        }, (err) => {
+            console.error('Service Call Error:', err);
+            if (missionStatus) {
+                missionStatus.innerText = 'ERROR (Check Console)';
+                missionStatus.className = 'text-red-500 font-bold';
+            }
+            startBtn.disabled = false; // Re-enable button on error
+            startBtn.innerText = 'START MISSION';
+        });
     });
-});
+}
 
 // 2. Land (Standard MAVROS)
 const landClient = new ROSLIB.Service({
@@ -234,6 +255,14 @@ function updateHealthStatus(id, isHealthy) {
 
 let missionMode = false;
 let waypoints = [];
+try {
+    const saved = localStorage.getItem('droneWaypoints');
+    if (saved) {
+        waypoints = JSON.parse(saved);
+    }
+} catch (e) {
+    console.error('Failed to load waypoints', e);
+}
 let waypointMarkers = [];
 let waypointLines = null;
 
@@ -280,11 +309,22 @@ function toggleMissionMode() {
 
 // Add waypoint
 function addWaypoint(latlng) {
+    const defaultAltInput = document.getElementById('input-default-alt');
+    let altitudeVal = 3.0; // Default altitude
+    if (defaultAltInput) {
+        const parsed = parseFloat(defaultAltInput.value);
+        if (!isNaN(parsed) && parsed > 0) {
+            altitudeVal = parsed;
+        } else {
+            defaultAltInput.value = "3.0";
+        }
+    }
+
     const index = waypoints.length;
     waypoints.push({
         lat: latlng.lat,
         lng: latlng.lng,
-        altitude: 2.0  // Default altitude
+        altitude: altitudeVal
     });
 
     // Add marker on map
@@ -295,7 +335,7 @@ function addWaypoint(latlng) {
     updateWaypointLines();
 
     // Update UI
-    updateWaypointListUI();
+    syncWaypoints();
 }
 
 // Remove waypoint
@@ -312,7 +352,7 @@ function removeWaypoint(index) {
     });
 
     updateWaypointLines();
-    updateWaypointListUI();
+    syncWaypoints();
 }
 
 // Clear all waypoints
@@ -326,7 +366,7 @@ function clearWaypoints() {
         waypointLines = null;
     }
 
-    updateWaypointListUI();
+    syncWaypoints();
 }
 
 // Update polyline
@@ -336,11 +376,17 @@ function updateWaypointLines() {
     }
 
     if (waypoints.length > 0) {
+        let latlngs = [];
+        // Connect home to drone current pos, then to waypoints
+        if (homePosition) {
+            latlngs.push([homePosition.lat, homePosition.lng]);
+        }
+
         const dronePos = droneMarker.getLatLng();
-        const latlngs = [
-            [dronePos.lat, dronePos.lng],
-            ...waypoints.map(wp => [wp.lat, wp.lng])
-        ];
+        latlngs.push([dronePos.lat, dronePos.lng]);
+
+        latlngs.push(...waypoints.map(wp => [wp.lat, wp.lng]));
+
         waypointLines = L.polyline(latlngs, {
             color: '#f97316',
             weight: 3,
@@ -350,8 +396,32 @@ function updateWaypointLines() {
     }
 }
 
+function syncWaypoints() {
+    localStorage.setItem('droneWaypoints', JSON.stringify(waypoints));
+    updateWaypointListUI();
+    updateDashboardQueueUI();
+}
+
+function initWaypoints() {
+    waypointMarkers.forEach(marker => map.removeLayer(marker));
+    waypointMarkers = [];
+
+    waypoints.forEach((wp, index) => {
+        const marker = L.marker([wp.lat, wp.lng], { icon: createWaypointIcon(index + 1) }).addTo(map);
+        waypointMarkers.push(marker);
+    });
+    updateWaypointLines();
+    updateWaypointListUI();
+    updateDashboardQueueUI();
+}
+
+// Set up UI on load
+initWaypoints();
+
 // Update waypoint list UI
 function updateWaypointListUI() {
+    if (!waypointListEl) return;
+
     if (waypoints.length === 0) {
         waypointListEl.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-4">Empty Waypoint</p>';
     } else {
@@ -361,7 +431,11 @@ function updateWaypointListUI() {
                     <span class="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">${i + 1}</span>
                     <div>
                         <p class="text-[10px] font-bold text-slate-700">${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}</p>
-                        <p class="text-[9px] text-slate-400">Alt: ${wp.altitude}m</p>
+                        <div class="flex items-center gap-1 mt-0.5">
+                            <span class="text-[9px] text-slate-400">Alt:</span>
+                            <input type="number" value="${wp.altitude}" onchange="updateWaypointAlt(${i}, this.value)" class="w-12 text-[10px] border border-slate-200 rounded px-1 py-0.5 text-center font-bold text-slate-600 bg-white focus:outline-none focus:border-blue-400" step="0.5" />
+                            <span class="text-[9px] text-slate-400">m</span>
+                        </div>
                     </div>
                 </div>
                 <button onclick="removeWaypoint(${i})" class="text-red-400 hover:text-red-600 p-1 transition">
@@ -371,8 +445,61 @@ function updateWaypointListUI() {
         `).join('');
     }
 
-    waypointCountEl.textContent = `${waypoints.length} Waypoints`;
+    if (waypointCountEl) {
+        waypointCountEl.textContent = `${waypoints.length} Waypoints`;
+    }
     lucide.createIcons();
+}
+
+function updateDashboardQueueUI() {
+    const queueList = document.getElementById('mission-queue-list');
+    if (!queueList) return;
+
+    if (waypoints.length === 0) {
+        queueList.innerHTML = '<div class="text-[11px] text-slate-400 text-center py-4">No Active Missions</div>';
+        return;
+    }
+
+    let queueHTML = '';
+
+    if (homePosition && waypoints.length > 0) {
+        queueHTML += `
+            <div class="flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:border-blue-200 transition group cursor-pointer bg-slate-50 opacity-80">
+                <div class="flex items-center gap-3">
+                    <div class="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-[10px] font-bold"><i data-lucide="home" class="w-3 h-3"></i></div>
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold text-slate-600">Home Position</span>
+                        <span class="text-[9px] font-bold text-slate-400">Lat: ${homePosition.lat.toFixed(4)}, Lng: ${homePosition.lng.toFixed(4)}</span>
+                    </div>
+                </div>
+                <span class="text-[10px] font-bold text-slate-500">Takeoff</span>
+            </div>
+        `;
+    }
+
+    queueList.innerHTML = queueHTML + waypoints.map((wp, i) => `
+        <div class="flex items-center justify-between p-3 border border-slate-100 rounded-xl hover:border-blue-200 transition group cursor-pointer ${i === 0 ? 'bg-slate-50' : 'bg-white'}">
+            <div class="flex items-center gap-3">
+                <div class="w-6 h-6 rounded-full ${i === 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'} flex items-center justify-center text-[10px] font-bold">${i + 1}</div>
+                <div class="flex flex-col">
+                    <span class="text-xs font-bold ${i === 0 ? 'text-slate-700' : 'text-slate-600'}">Waypoint ${i + 1}</span>
+                    <span class="text-[9px] font-bold text-slate-400">Lat: ${wp.lat.toFixed(4)}, Lng: ${wp.lng.toFixed(4)} • Alt: ${wp.altitude}m</span>
+                </div>
+            </div>
+            <span class="text-[10px] font-bold text-slate-500">${i === 0 ? 'Next' : 'Pending'}</span>
+        </div>
+    `).join('');
+
+    lucide.createIcons();
+}
+
+function updateWaypointAlt(index, value) {
+    let alt = parseFloat(value);
+    if (isNaN(alt) || alt <= 0) {
+        alt = 3.0; // fallback
+    }
+    waypoints[index].altitude = alt;
+    syncWaypoints();
 }
 
 // ROS Publisher for waypoints
@@ -440,10 +567,10 @@ function sendMissionToROS() {
 }
 
 // Event Listeners
-missionBtn.addEventListener('click', toggleMissionMode);
-closeMissionBtn.addEventListener('click', toggleMissionMode);
-clearWaypointsBtn.addEventListener('click', clearWaypoints);
-confirmMissionBtn.addEventListener('click', sendMissionToROS);
+if (missionBtn) missionBtn.addEventListener('click', toggleMissionMode);
+if (closeMissionBtn) closeMissionBtn.addEventListener('click', toggleMissionMode);
+if (clearWaypointsBtn) clearWaypointsBtn.addEventListener('click', clearWaypoints);
+if (confirmMissionBtn) confirmMissionBtn.addEventListener('click', sendMissionToROS);
 
 // Map click handler
 map.on('click', function (e) {
@@ -462,3 +589,51 @@ function returnToHome() {
     console.log('Return to Home command');
     // Could call a ROS service here
 }
+
+// ===================================================
+// Mission Complete Modal Logic
+// ===================================================
+function showMissionCompleteModal() {
+    const modal = document.getElementById('mission-complete-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        lucide.createIcons(); // Re-render icons for modal if needed
+    }
+
+    // Update the waypoints info text if needed
+    const resumeWpEl = document.getElementById('val-resume-wp');
+    if (resumeWpEl) {
+        resumeWpEl.innerText = '1';
+    }
+}
+
+function hideMissionCompleteModal() {
+    const modal = document.getElementById('mission-complete-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+const btnCloseModal = document.getElementById('btn-close-modal');
+const btnLeavePlan = document.getElementById('btn-leave-plan');
+const btnRemovePlan = document.getElementById('btn-remove-plan');
+const btnResumeMission = document.getElementById('btn-resume-mission');
+
+if (btnCloseModal) btnCloseModal.addEventListener('click', hideMissionCompleteModal);
+if (btnLeavePlan) btnLeavePlan.addEventListener('click', hideMissionCompleteModal);
+if (btnRemovePlan) btnRemovePlan.addEventListener('click', () => {
+    clearWaypoints();
+    hideMissionCompleteModal();
+});
+if (btnResumeMission) btnResumeMission.addEventListener('click', hideMissionCompleteModal);
+
+// Cross-tab synchronization via localStorage
+window.addEventListener('storage', (e) => {
+    if (e.key === 'droneWaypoints') {
+        try {
+            const saved = e.newValue;
+            waypoints = saved ? JSON.parse(saved) : [];
+            initWaypoints(); // Redraw UI and map markers
+        } catch (err) {
+            console.error('Failed to sync waypoints across tabs', err);
+        }
+    }
+});

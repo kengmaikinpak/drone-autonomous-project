@@ -1,0 +1,299 @@
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import ROSLIB from 'roslib';
+import type { RosContextType, ConnectionStatus, DroneState, GpsData, HealthStatus } from '@/types';
+
+const defaultRosContext: RosContextType = {
+  connectionStatus: 'connecting',
+  droneState: { mode: 'Waiting...', armed: false },
+  gpsData: { latitude: 0, longitude: 0, status: -1 },
+  altitude: 0,
+  speed: 0,
+  battery: -1,
+  heading: 0,
+  flightTime: '--:--',
+  healthStatus: { gps: false, wifi: false, arm: false, gcs: false, fcu: false },
+  homePosition: null,
+  startMission: async () => ({ success: false, message: 'Not connected' }),
+  confirmWaypoint: async () => ({ success: false, message: 'Not connected' }),
+  landDrone: async () => false,
+  cancelMission: async () => false,
+  returnToHome: async () => false,
+  sendSettingsToROS: () => {},
+  rosIp: 'localhost:9090',
+  setRosIp: () => {},
+};
+
+const RosContext = createContext<RosContextType>(defaultRosContext);
+
+export const useRos = () => useContext(RosContext);
+
+interface Props {
+  children: React.ReactNode;
+}
+
+export const RosProvider: React.FC<Props> = ({ children }) => {
+  const rosRef = useRef<ROSLIB.Ros | null>(null);
+  const [rosIp, setRosIpState] = useState(() => localStorage.getItem('ros_ip') || 'localhost:9090');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [droneState, setDroneState] = useState<DroneState>({ mode: 'Waiting...', armed: false });
+  const [gpsData, setGpsData] = useState<GpsData>({ latitude: 0, longitude: 0, status: -1 });
+  const [altitude, setAltitude] = useState(0);
+  const [speed, setSpeed] = useState(0);
+  const [battery, setBattery] = useState(-1);
+  const [heading, setHeading] = useState(0);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus>({
+    gps: false, wifi: false, arm: false, gcs: false, fcu: false,
+  });
+  const [homePosition, setHomePosition] = useState<{ lat: number; lng: number } | null>(null);
+
+  const [flightSeconds, setFlightSeconds] = useState(0);
+  const flightTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Flight Timer: Starts when armed, stops and stores time when disarmed
+  useEffect(() => {
+    if (droneState.armed) {
+      setFlightSeconds(0);
+      flightTimerRef.current = setInterval(() => {
+        setFlightSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (flightTimerRef.current) {
+        clearInterval(flightTimerRef.current);
+        flightTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (flightTimerRef.current) clearInterval(flightTimerRef.current);
+    };
+  }, [droneState.armed]);
+
+  const flightTime = React.useMemo(() => {
+    if (flightSeconds === 0 && !droneState.armed) return '--:--';
+    const h = Math.floor(flightSeconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((flightSeconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (flightSeconds % 60).toString().padStart(2, '0');
+    return h === '00' ? `${m}:${s}` : `${h}:${m}:${s}`;
+  }, [flightSeconds, droneState.armed]);
+
+  const updateHealth = useCallback((key: keyof HealthStatus, value: boolean) => {
+    setHealthStatus(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const setRosIp = useCallback((ip: string) => {
+    localStorage.setItem('ros_ip', ip);
+    setRosIpState(ip);
+  }, []);
+
+  useEffect(() => {
+    setConnectionStatus('connecting');
+    const url = rosIp.startsWith('ws://') || rosIp.startsWith('wss://') ? rosIp : `ws://${rosIp}`;
+    const ros = new ROSLIB.Ros({ url });
+    rosRef.current = ros;
+
+    ros.on('connection', () => {
+      setConnectionStatus('connected');
+      updateHealth('fcu', true);
+      setTimeout(() => {
+        updateHealth('wifi', true);
+        updateHealth('gcs', true);
+      }, 1000);
+    });
+
+    ros.on('error', () => {
+      setConnectionStatus('error');
+      updateHealth('fcu', false);
+    });
+
+    ros.on('close', () => {
+      setConnectionStatus('closed');
+      updateHealth('fcu', false);
+    });
+
+    // State subscriber
+    const stateSub = new ROSLIB.Topic({
+      ros, name: '/mavros/state', messageType: 'mavros_msgs/msg/State',
+    });
+    stateSub.subscribe((msg: any) => {
+      setDroneState({ mode: msg.mode, armed: msg.armed });
+      updateHealth('arm', msg.armed);
+    });
+
+    // GPS subscriber
+    const gpsSub = new ROSLIB.Topic({
+      ros, name: '/mavros/global_position/global', messageType: 'sensor_msgs/msg/NavSatFix',
+    });
+    gpsSub.subscribe((msg: any) => {
+      if (msg.latitude && msg.longitude) {
+        setGpsData({ latitude: msg.latitude, longitude: msg.longitude, status: msg.status?.status ?? -1 });
+        updateHealth('gps', (msg.status?.status ?? -1) >= 0);
+      }
+    });
+
+    // Home Position subscriber -> ใช้สำหรับเป็น Origin ในการแปลงพิกัด
+    const homeSub = new ROSLIB.Topic({
+      ros, name: '/mavros/home_position/home', messageType: 'mavros_msgs/msg/HomePosition',
+    });
+    homeSub.subscribe((msg: any) => {
+      if (msg.geo && msg.geo.latitude && msg.geo.longitude) {
+        setHomePosition({ lat: msg.geo.latitude, lng: msg.geo.longitude });
+      }
+    });
+
+    // Altitude subscriber
+    const altSub = new ROSLIB.Topic({
+      ros, name: '/mavros/global_position/rel_alt', messageType: 'std_msgs/msg/Float64',
+    });
+    altSub.subscribe((msg: any) => {
+      setAltitude(msg.data);
+    });
+
+    // Speed subscriber
+    const vfrSub = new ROSLIB.Topic({
+      ros, name: '/mavros/vfr_hud', messageType: 'mavros_msgs/msg/VfrHud',
+    });
+    vfrSub.subscribe((msg: any) => {
+      setSpeed(Math.round(msg.groundspeed * 3.6));
+    });
+
+    // Battery subscriber
+    const batSub = new ROSLIB.Topic({
+      ros, name: '/mavros/battery', messageType: 'sensor_msgs/msg/BatteryState',
+    });
+    batSub.subscribe((msg: any) => {
+      let pct = msg.percentage;
+      if (pct > 1.0) pct /= 100.0;
+      setBattery(Math.round(pct * 100));
+    });
+
+    // Compass heading subscriber
+    const compassSub = new ROSLIB.Topic({
+      ros, name: '/mavros/global_position/compass_hdg', messageType: 'std_msgs/msg/Float64',
+    });
+    compassSub.subscribe((msg: any) => {
+      setHeading(msg.data);
+    });
+
+    return () => {
+      stateSub.unsubscribe();
+      gpsSub.unsubscribe();
+      homeSub.unsubscribe();
+      altSub.unsubscribe();
+      vfrSub.unsubscribe();
+      batSub.unsubscribe();
+      compassSub.unsubscribe();
+      ros.close();
+    };
+  }, [rosIp, updateHealth]);
+
+  const startMission = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+    if (!rosRef.current) return { success: false, message: 'Not connected' };
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mission/start', serviceType: 'std_srvs/Trigger',
+    });
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({}), (result: any) => {
+        resolve({ success: result.success, message: result.message || '' });
+      }, (err: string) => {
+        resolve({ success: false, message: err });
+      });
+    });
+  }, []);
+
+  const confirmWaypoint = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+    if (!rosRef.current) return { success: false, message: 'Not connected' };
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mission/confirm_waypoint', serviceType: 'std_srvs/Trigger',
+    });
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({}), (result: any) => {
+        resolve({ success: result.success, message: result.message || '' });
+      }, (err: string) => {
+        resolve({ success: false, message: err });
+      });
+    });
+  }, []);
+
+  const landDrone = useCallback(async (): Promise<boolean> => {
+    if (!rosRef.current) return false;
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mavros/cmd/land', serviceType: 'mavros_msgs/srv/CommandTOL',
+    });
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({}), (res: any) => {
+        console.log('Land Command Sent', res);
+        resolve(res.success);
+      }, (err: string) => {
+        console.error('Land Command Error', err);
+        resolve(false);
+      });
+    });
+  }, []);
+
+  const cancelMission = useCallback(async (): Promise<boolean> => {
+    if (!rosRef.current) return false;
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mavros/set_mode', serviceType: 'mavros_msgs/srv/SetMode',
+    });
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.LOITER' }), (res: any) => {
+        console.log('Cancel Mission (Loiter) Command Sent', res);
+        resolve(res.mode_sent);
+      }, (err: string) => {
+        console.error('Cancel Mission Error', err);
+        resolve(false);
+      });
+    });
+  }, []);
+
+  const returnToHome = useCallback(async (): Promise<boolean> => {
+    if (!rosRef.current) return false;
+    const client = new ROSLIB.Service({
+      ros: rosRef.current, name: '/mavros/set_mode', serviceType: 'mavros_msgs/srv/SetMode',
+    });
+    return new Promise((resolve) => {
+      client.callService(new ROSLIB.ServiceRequest({ custom_mode: 'AUTO.RTL' }), (res: any) => {
+        console.log('Return to Home (RTL) Command Sent', res);
+        resolve(res.mode_sent);
+      }, (err: string) => {
+        console.error('Return to Home Error', err);
+        resolve(false);
+      });
+    });
+  }, []);
+
+  const sendSettingsToROS = useCallback((settings: any) => {
+    if (!rosRef.current || connectionStatus !== 'connected') return;
+    const topic = new ROSLIB.Topic({
+      ros: rosRef.current,
+      name: '/mission/settings',
+      messageType: 'std_msgs/msg/String'
+    });
+    
+    topic.publish(new ROSLIB.Message({
+      data: JSON.stringify(settings)
+    }));
+  }, [connectionStatus]);
+
+  const value: RosContextType = {
+    connectionStatus,
+    droneState,
+    gpsData,
+    altitude,
+    speed,
+    battery,
+    heading,
+    flightTime,
+    healthStatus,
+    homePosition,
+    startMission,
+    confirmWaypoint,
+    landDrone,
+    cancelMission,
+    returnToHome,
+    sendSettingsToROS,
+    rosIp,
+    setRosIp,
+  };
+
+  return <RosContext.Provider value={value}>{children}</RosContext.Provider>;
+};
