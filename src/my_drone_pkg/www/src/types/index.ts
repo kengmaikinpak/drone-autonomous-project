@@ -46,6 +46,7 @@ export interface RosContextType {
   cancelMission: () => Promise<boolean>;
   returnToHome: () => Promise<boolean>;
   sendSettingsToROS: (settings: any) => void;
+  sendWaypointsToROS: (poses: any[]) => void;
   rosIp: string;
   setRosIp: (ip: string) => void;
 }

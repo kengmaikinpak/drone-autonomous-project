@@ -4,7 +4,7 @@ import json
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode
+from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
 from geometry_msgs.msg import PoseStamped, PoseArray
 from std_srvs.srv import Trigger
 from std_msgs.msg import String
@@ -26,6 +26,7 @@ class OffboardControl(Node):
         # Service Clients
         self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.set_mode_client = self.create_client(SetMode, '/mavros/set_mode')
+        self.takeoff_client = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
         self.param_set_client = self.create_client(SetParameters, '/mavros/param/set_parameters')
         
         # Publishers
@@ -66,6 +67,7 @@ class OffboardControl(Node):
         self.current_wp_idx = 0
         self.mission_origin = (0.0, 0.0)
         self.takeoff_setpoint_z = 0.0
+        self.takeoff_service_called = False
         
         self.last_request_time = self.get_clock().now()
         self.state_start_time = self.get_clock().now()
@@ -83,6 +85,10 @@ class OffboardControl(Node):
 
     def start_mission_callback(self, request, response):
         if self.mission_state == self.STATE_IDLE:
+            if not self.custom_waypoints:
+                response.success = False
+                response.message = "No mission waypoints received from web. Cannot start."
+                return response
             self.mission_started = True
             response.success = True
             response.message = "Mission Start signal received."
@@ -179,44 +185,57 @@ class OffboardControl(Node):
             else:
                 now = self.get_clock().now()
                 if now - self.last_request_time > rclpy.duration.Duration(seconds=1.0):
-                    if self.current_state.mode != "OFFBOARD":
-                        self.set_mode_client.call_async(SetMode.Request(custom_mode="OFFBOARD"))
-                    elif not self.current_state.armed:
+                    if not self.current_state.armed:
+                        self.get_logger().info("Sending arm command...")
                         self.arm_client.call_async(CommandBool.Request(value=True))
                     self.last_request_time = now
                 
-                if self.current_state.mode == "OFFBOARD" and self.current_state.armed:
+                if self.current_state.armed:
                     self.mission_state = self.STATE_TAKEOFF
-                    self.takeoff_setpoint_z = self.current_pose.pose.position.z # Start ramping from current height
-                    self.target_pose.pose.position.z = self.takeoff_setpoint_z
+                    self.takeoff_service_called = False
 
         elif self.mission_state == self.STATE_TAKEOFF:
-            # Smoothly increment vertical setpoint (Ramping)
-            # 0.5 m/s target climb rate (at 20Hz = 0.025m per tick)
-            CLIMB_RATE_MS = 0.5 
-            Z_STEP = CLIMB_RATE_MS * 0.05
+            # Keep streaming current position to ensure setpoint pipeline stays active
+            self.target_pose.pose.position = self.current_pose.pose.position
+            self.target_pose.pose.orientation = self.current_pose.pose.orientation
             
-            if self.takeoff_setpoint_z < self.takeoff_alt:
-                self.takeoff_setpoint_z += Z_STEP
-                if self.takeoff_setpoint_z > self.takeoff_alt:
-                    self.takeoff_setpoint_z = self.takeoff_alt
-            
-            self.target_pose.pose.position.z = self.takeoff_setpoint_z
-
-            # Safety check: prevent overshoot by ensuring setpoint NEVER exceeds target
-            if self.target_pose.pose.position.z > self.takeoff_alt:
-                self.target_pose.pose.position.z = self.takeoff_alt
+            if not self.takeoff_service_called:
+                now = self.get_clock().now()
+                if now - self.last_request_time > rclpy.duration.Duration(seconds=1.0):
+                    self.get_logger().info("Calling MAVROS takeoff service...")
+                    req = CommandTOL.Request()
+                    req.altitude = float(self.takeoff_alt)
+                    req.latitude = 0.0
+                    req.longitude = 0.0
+                    req.min_pitch = 0.0
+                    req.yaw = 0.0
+                    self.takeoff_client.call_async(req)
+                    self.takeoff_service_called = True
+                    self.last_request_time = now
                 
-            # Transition only when reached target AND ramping is complete
-            if self.is_at_target(z_tol=0.2) and self.takeoff_setpoint_z >= self.takeoff_alt:
+            # Transition only when reached takeoff altitude (using relative alt tolerance)
+            if self.current_pose.pose.position.z >= (self.takeoff_alt - 0.2):
+                self.get_logger().info(f"Takeoff target altitude of {self.takeoff_alt}m reached via service.")
                 self.mission_state = self.STATE_WAIT_CONFIRM
                 self.mission_confirmed = False
 
         elif self.mission_state == self.STATE_WAIT_CONFIRM:
+            # Continue streaming current position to hover
+            self.target_pose.pose.position = self.current_pose.pose.position
+            self.target_pose.pose.orientation = self.current_pose.pose.orientation
+            
             if self.mission_confirmed:
-                self.mission_state = self.STATE_MISSION
-                self.current_wp_idx = 0
-                self.set_next_waypoint()
+                now = self.get_clock().now()
+                if now - self.last_request_time > rclpy.duration.Duration(seconds=1.0):
+                    if self.current_state.mode != "OFFBOARD":
+                        self.get_logger().info("Switching mode to OFFBOARD mid-air...")
+                        self.set_mode_client.call_async(SetMode.Request(custom_mode="OFFBOARD"))
+                    self.last_request_time = now
+                
+                if self.current_state.mode == "OFFBOARD":
+                    self.mission_state = self.STATE_MISSION
+                    self.current_wp_idx = 0
+                    self.set_next_waypoint()
 
         elif self.mission_state == self.STATE_MISSION:
             if self.is_at_target():
@@ -243,9 +262,11 @@ class OffboardControl(Node):
             if not self.current_state.armed:
                 self.mission_state = self.STATE_IDLE
 
-        # Security check: abort if mode changes manually
-        if self.mission_state not in [self.STATE_IDLE, self.STATE_ARMING] and self.current_state.mode != "OFFBOARD":
-            self.mission_state = self.STATE_IDLE
+        # Security check: abort if mode changes manually during active mission or hover
+        if self.mission_state in [self.STATE_MISSION, self.STATE_HOVER] and self.current_state.mode != "OFFBOARD":
+            if not (self.mission_state == self.STATE_HOVER and self.current_state.mode in ["AUTO.RTL", "AUTO.LOITER", "AUTO.LAND"]):
+                self.get_logger().warn(f"Manual mode change detected ({self.current_state.mode}) during mission! Aborting to IDLE.")
+                self.mission_state = self.STATE_IDLE
 
         # Setpoint Publishing
         if self.mission_state != self.STATE_IDLE:
@@ -253,7 +274,7 @@ class OffboardControl(Node):
             self.pose_pub.publish(self.target_pose)
 
     def set_next_waypoint(self):
-        wps = self.custom_waypoints if self.custom_waypoints else self.get_default_waypoints()
+        wps = self.custom_waypoints
         if self.current_wp_idx >= len(wps): return False
         
         x, y, z, yaw = wps[self.current_wp_idx]
@@ -269,11 +290,8 @@ class OffboardControl(Node):
         return True
 
     def get_current_wp_data(self):
-        wps = self.custom_waypoints if self.custom_waypoints else self.get_default_waypoints()
+        wps = self.custom_waypoints
         return wps[self.current_wp_idx] if self.current_wp_idx < len(wps) else None
-
-    def get_default_waypoints(self):
-        return [(0.0, 0.0, 2.0, 0.0), (2.0, 0.0, 2.0, 0.0), (-2.0, 0.0, 2.0, 0.0), (0.0, 0.0, 2.0, 90.0), (0.0, 0.0, 2.0, 0.0)]
 
     def set_px4_param(self, pid, val):
         req = SetParameters.Request()

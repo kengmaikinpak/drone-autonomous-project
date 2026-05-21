@@ -19,6 +19,7 @@ const defaultRosContext: RosContextType = {
   cancelMission: async () => false,
   returnToHome: async () => false,
   sendSettingsToROS: () => {},
+  sendWaypointsToROS: () => {},
   rosIp: 'localhost:9090',
   setRosIp: () => {},
 };
@@ -274,6 +275,23 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     }));
   }, [connectionStatus]);
 
+  const sendWaypointsToROS = useCallback((poses: any[]) => {
+    if (!rosRef.current || connectionStatus !== 'connected') {
+      console.warn('Cannot send waypoints: ROS is not connected');
+      return;
+    }
+    const topic = new ROSLIB.Topic({
+      ros: rosRef.current,
+      name: '/mission/waypoints',
+      messageType: 'geometry_msgs/msg/PoseArray',
+    });
+    const msg = new ROSLIB.Message({
+      header: { stamp: { sec: 0, nanosec: 0 }, frame_id: 'map' },
+      poses,
+    });
+    topic.publish(msg);
+  }, [connectionStatus]);
+
   const value: RosContextType = {
     connectionStatus,
     droneState,
@@ -291,6 +309,7 @@ export const RosProvider: React.FC<Props> = ({ children }) => {
     cancelMission,
     returnToHome,
     sendSettingsToROS,
+    sendWaypointsToROS,
     rosIp,
     setRosIp,
   };
