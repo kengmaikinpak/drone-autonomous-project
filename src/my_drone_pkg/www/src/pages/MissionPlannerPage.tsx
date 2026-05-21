@@ -138,7 +138,7 @@ const MissionPlannerInner: React.FC = () => {
   }, [pendingAction, startMission, confirmWaypoint, landDrone, cancelMission, returnToHome, setMissionStatus]);
 
   useEffect(() => {
-    if (missionStatus === 'TAKING OFF...' && altitude >= settings.takeoffAltitude - 0.2) {
+    if (missionStatus === 'TAKING OFF...' && altitude >= settings.takeoffAltitude - 0.3) {
       setMissionStatus('WAITING CONFIRM', 'text-orange-500');
     }
   }, [altitude, missionStatus, setMissionStatus, settings.takeoffAltitude]);
@@ -406,7 +406,7 @@ const MissionPlannerInner: React.FC = () => {
 
             <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between bg-slate-50">
               <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Auto Return to Launch</span>
-              <div 
+              <div
                 onClick={() => updateSettings({ autoRtl: !settings.autoRtl })}
                 className={`w-10 h-5 rounded-full p-1 cursor-pointer transition-colors duration-200 ${settings.autoRtl ? 'bg-blue-600' : 'bg-slate-300'}`}
               >

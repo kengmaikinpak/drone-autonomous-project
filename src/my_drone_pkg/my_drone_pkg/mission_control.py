@@ -52,7 +52,7 @@ class OffboardControl(Node):
         self.current_state = State()
         self.current_pose = PoseStamped()
         self.target_pose = PoseStamped()
-        self.target_pose.header.frame_id = "map"
+        self.target_pose.header.frame_id = "odom"
         
         self.mission_state = self.STATE_IDLE
         self.last_state = self.STATE_IDLE
@@ -144,7 +144,8 @@ class OffboardControl(Node):
     def calc_bearing(self, tx, ty):
         dx = tx - self.current_pose.pose.position.x
         dy = ty - self.current_pose.pose.position.y
-        if math.sqrt(dx**2 + dy**2) < 0.3: return None
+        # Stop updating bearing if we are within 1.5 meters to prevent spinning around if we overshoot
+        if math.sqrt(dx**2 + dy**2) < 1.5: return None
         return math.degrees(math.atan2(dy, dx))
 
     def is_at_target(self, xy_tol=0.25, z_tol=0.2, yaw_tol=10.0):
@@ -176,8 +177,13 @@ class OffboardControl(Node):
                 self.mission_started = False
                 self.mission_origin = (self.current_pose.pose.position.x, self.current_pose.pose.position.y)
                 # Snapshot current position and orientation for arming phase
-                self.target_pose.pose.position = self.current_pose.pose.position
-                self.target_pose.pose.orientation = self.current_pose.pose.orientation
+                self.target_pose.pose.position.x = self.current_pose.pose.position.x
+                self.target_pose.pose.position.y = self.current_pose.pose.position.y
+                self.target_pose.pose.position.z = self.current_pose.pose.position.z
+                self.target_pose.pose.orientation.x = self.current_pose.pose.orientation.x
+                self.target_pose.pose.orientation.y = self.current_pose.pose.orientation.y
+                self.target_pose.pose.orientation.z = self.current_pose.pose.orientation.z
+                self.target_pose.pose.orientation.w = self.current_pose.pose.orientation.w
 
         elif self.mission_state == self.STATE_ARMING:
             if self.init_setpoint_count < 20:
@@ -196,8 +202,13 @@ class OffboardControl(Node):
 
         elif self.mission_state == self.STATE_TAKEOFF:
             # Keep streaming current position to ensure setpoint pipeline stays active
-            self.target_pose.pose.position = self.current_pose.pose.position
-            self.target_pose.pose.orientation = self.current_pose.pose.orientation
+            self.target_pose.pose.position.x = self.current_pose.pose.position.x
+            self.target_pose.pose.position.y = self.current_pose.pose.position.y
+            self.target_pose.pose.position.z = self.current_pose.pose.position.z
+            self.target_pose.pose.orientation.x = self.current_pose.pose.orientation.x
+            self.target_pose.pose.orientation.y = self.current_pose.pose.orientation.y
+            self.target_pose.pose.orientation.z = self.current_pose.pose.orientation.z
+            self.target_pose.pose.orientation.w = self.current_pose.pose.orientation.w
             
             if not self.takeoff_service_called:
                 now = self.get_clock().now()
@@ -205,24 +216,26 @@ class OffboardControl(Node):
                     self.get_logger().info("Calling MAVROS takeoff service...")
                     req = CommandTOL.Request()
                     req.altitude = float(self.takeoff_alt)
-                    req.latitude = 0.0
-                    req.longitude = 0.0
+                    req.latitude = float('nan')
+                    req.longitude = float('nan')
                     req.min_pitch = 0.0
-                    req.yaw = 0.0
+                    req.yaw = float('nan')
                     self.takeoff_client.call_async(req)
                     self.takeoff_service_called = True
                     self.last_request_time = now
                 
             # Transition only when reached takeoff altitude (using relative alt tolerance)
-            if self.current_pose.pose.position.z >= (self.takeoff_alt - 0.2):
+            if self.current_pose.pose.position.z >= (self.takeoff_alt - 0.5):
                 self.get_logger().info(f"Takeoff target altitude of {self.takeoff_alt}m reached via service.")
                 self.mission_state = self.STATE_WAIT_CONFIRM
                 self.mission_confirmed = False
 
         elif self.mission_state == self.STATE_WAIT_CONFIRM:
-            # Continue streaming current position to hover
-            self.target_pose.pose.position = self.current_pose.pose.position
-            self.target_pose.pose.orientation = self.current_pose.pose.orientation
+            # Hold the takeoff position
+            self.target_pose.pose.position.x = self.mission_origin[0]
+            self.target_pose.pose.position.y = self.mission_origin[1]
+            self.target_pose.pose.position.z = float(self.takeoff_alt)
+            # Orientation remains what was snapshotted previously
             
             if self.mission_confirmed:
                 now = self.get_clock().now()
