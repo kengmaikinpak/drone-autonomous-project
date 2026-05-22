@@ -138,7 +138,7 @@ const MissionPlannerInner: React.FC = () => {
   }, [pendingAction, startMission, confirmWaypoint, landDrone, cancelMission, returnToHome, setMissionStatus]);
 
   useEffect(() => {
-    if (missionStatus === 'TAKING OFF...' && altitude >= settings.takeoffAltitude - 0.3) {
+    if (missionStatus === 'TAKING OFF...' && altitude >= settings.takeoffAltitude - 1.0) {
       setMissionStatus('WAITING CONFIRM', 'text-orange-500');
     }
   }, [altitude, missionStatus, setMissionStatus, settings.takeoffAltitude]);
