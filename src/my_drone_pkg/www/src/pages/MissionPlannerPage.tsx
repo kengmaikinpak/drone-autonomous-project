@@ -71,6 +71,11 @@ const MissionPlannerInner: React.FC = () => {
       connectionStatus === 'error' ? 'text-red-500 bg-red-500' : 'text-slate-400 bg-slate-400';
   const connParts = connColor.split(' ');
 
+  const batteryColorClass =
+    battery < 0 ? 'text-slate-800' :
+      battery < settings.lowBatteryThreshold ? 'text-red-500' :
+        battery < 50 ? 'text-orange-500' : 'text-green-500';
+
   const toggleMissionMode = useCallback(() => {
     setMissionMode(prev => !prev);
   }, []);
@@ -199,8 +204,8 @@ const MissionPlannerInner: React.FC = () => {
             </div>
             <div className="flex justify-between items-center text-[11px]">
               <div className="flex items-center gap-1">
-                <BatteryIcon className="w-4 h-4 text-green-500" />
-                <span className="font-bold text-green-500">{battery >= 0 ? `${battery}%` : '--%'}</span>
+                <BatteryIcon className={`w-4 h-4 ${batteryColorClass}`} />
+                <span className={`font-bold ${batteryColorClass}`}>{battery >= 0 ? `${battery}%` : '--%'}</span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-slate-400 uppercase font-bold">Mode:</span>
