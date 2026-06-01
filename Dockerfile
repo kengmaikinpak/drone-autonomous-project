@@ -7,9 +7,11 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-mavros \
     ros-jazzy-mavros-extras \
     ros-jazzy-rosbridge-suite \
+    ros-jazzy-rqt-graph \
     python3-pip \
     wget \
     && rm -rf /var/lib/apt/lists/*
+
 
 # ติดตั้งข้อมูลแผนที่สำหรับ MAVROS
 RUN wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh \
